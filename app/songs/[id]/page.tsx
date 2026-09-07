@@ -38,13 +38,12 @@ export default function SongDetailPage() {
   const songId = params.id as string
   const router = useRouter()
   const { language } = useLanguage()
-  const { currentSong, isPlaying, isMuted, togglePlay, toggleMute, playSong, next, prev } = useAudio()
-  const [displayedSong, setDisplayedSong] = useState<SongData | null>(null)
+  const { currentSong, isPlaying, isMuted, togglePlay, toggleMute, playSong, next, prev, playlist } = useAudio()
+  const [song, setSong] = useState<SongData | null>(null)
   const [loading, setLoading] = useState(true)
   const [liked, setLiked] = useState(false)
   const [deviceId, setDeviceId] = useState('')
 
-  // جلب الأغنية من الرابط عند التحميل
   useEffect(() => {
     let stored = localStorage.getItem('deviceId')
     if (!stored) {
@@ -52,38 +51,37 @@ export default function SongDetailPage() {
       localStorage.setItem('deviceId', stored)
     }
     setDeviceId(stored)
+  }, [])
 
+  // جلب الأغنية من الرابط دائمًا
+  useEffect(() => {
     const fetchSong = async () => {
+      setLoading(true)
       try {
         const docSnap = await getDoc(doc(db, 'songs', songId))
         if (docSnap.exists() && docSnap.data().isPublished) {
           const songData = { id: docSnap.id, ...docSnap.data() } as SongData
-          setDisplayedSong(songData)
-          isSongLiked(songId, stored).then(setLiked)
+          setSong(songData)
+          // التحقق من حالة الإعجاب
+          isSongLiked(songId, deviceId).then(setLiked)
+        } else {
+          setSong(null)
         }
       } catch (error) {
         console.error('Error fetching song:', error)
+        setSong(null)
       } finally {
         setLoading(false)
       }
     }
     fetchSong()
-  }, [songId])
-
-  // عندما يتغير currentSong (عبر أزرار التنقل) نحدّث displayedSong
-  useEffect(() => {
-    if (currentSong) {
-      setDisplayedSong(currentSong)
-      setLiked(false) // إعادة ضبط حالة الإعجاب مؤقتًا، وسيتم التحقق في effect التالي
-      isSongLiked(currentSong.id, deviceId).then(setLiked)
-    }
-  }, [currentSong, deviceId])
+  }, [songId, deviceId])
 
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center text-camel-coat">جارٍ التحميل...</div>
   }
 
-  if (!displayedSong) {
+  if (!song) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-8 text-center">
         <h1 className="text-3xl font-bold text-camel-coat mb-4">الأغنية غير موجودة</h1>
@@ -94,17 +92,17 @@ export default function SongDetailPage() {
     )
   }
 
-  const title = language === 'ar' ? displayedSong.titleAr || displayedSong.titleEn : displayedSong.titleEn || displayedSong.titleAr
-  const artist = language === 'ar' ? displayedSong.artistAr || 'مهى فتوني' : displayedSong.artistEn || 'Maha Ftouni'
-  const lyrics = language === 'ar' ? displayedSong.lyricsAr : displayedSong.lyricsEn
-  const composer = language === 'ar' ? displayedSong.composerAr : displayedSong.composerEn
-  const lyricist = language === 'ar' ? displayedSong.lyricistAr : displayedSong.lyricistEn
-  const arranger = language === 'ar' ? displayedSong.arrangerAr : displayedSong.arrangerEn
-  const album = language === 'ar' ? displayedSong.albumAr : displayedSong.albumEn
-  const isCurrent = currentSong?.id === displayedSong.id
+  const title = language === 'ar' ? song.titleAr || song.titleEn : song.titleEn || song.titleAr
+  const artist = language === 'ar' ? song.artistAr || 'مهى فتوني' : song.artistEn || 'Maha Ftouni'
+  const lyrics = language === 'ar' ? song.lyricsAr : song.lyricsEn
+  const composer = language === 'ar' ? song.composerAr : song.composerEn
+  const lyricist = language === 'ar' ? song.lyricistAr : song.lyricistEn
+  const arranger = language === 'ar' ? song.arrangerAr : song.arrangerEn
+  const album = language === 'ar' ? song.albumAr : song.albumEn
+  const isCurrent = currentSong?.id === song.id
 
   const handleShare = async () => {
-    const songUrl = window.location.origin + `/songs/${displayedSong.id}`
+    const songUrl = `${window.location.origin}/songs/${song.id}`
     const shareData = { title, text: `استمع إلى ${title} - ${artist}`, url: songUrl }
     if (navigator.share) {
       try {
@@ -120,7 +118,7 @@ export default function SongDetailPage() {
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(displayedSong.audioUrl)
+      const response = await fetch(song.audioUrl)
       const blob = await response.blob()
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
@@ -139,10 +137,10 @@ export default function SongDetailPage() {
     if (!deviceId) return
     try {
       if (liked) {
-        await unlikeSong(displayedSong.id, deviceId)
+        await unlikeSong(song.id, deviceId)
         setLiked(false)
       } else {
-        await likeSong(displayedSong.id, deviceId)
+        await likeSong(song.id, deviceId)
         setLiked(true)
       }
     } catch (error) {
@@ -154,16 +152,27 @@ export default function SongDetailPage() {
     if (isCurrent) {
       togglePlay()
     } else {
-      playSong(displayedSong)
+      playSong(song)
     }
   }
 
+  // التنقل بين الأغاني: نغير الرابط إلى الأغنية الجديدة
   const handleNext = () => {
-    next()
+    if (playlist.length === 0) return
+    const currentIndex = playlist.findIndex((s) => s.id === song.id)
+    if (currentIndex > -1 && currentIndex < playlist.length - 1) {
+      const nextSong = playlist[currentIndex + 1]
+      router.push(`/songs/${nextSong.id}`)
+    }
   }
 
   const handlePrev = () => {
-    prev()
+    if (playlist.length === 0) return
+    const currentIndex = playlist.findIndex((s) => s.id === song.id)
+    if (currentIndex > 0) {
+      const prevSong = playlist[currentIndex - 1]
+      router.push(`/songs/${prevSong.id}`)
+    }
   }
 
   const handleGoToPlayer = () => {
@@ -172,21 +181,14 @@ export default function SongDetailPage() {
 
   return (
     <div className="max-w-4xl mx-auto p-8">
-      <button
-        onClick={handleGoToPlayer}
-        className="mb-8 flex items-center gap-2 text-boho hover:text-rubine transition"
-      >
+      <button onClick={handleGoToPlayer} className="mb-8 flex items-center gap-2 text-boho hover:text-rubine transition">
         <ArrowRight size={20} />
         {language === 'ar' ? 'العودة للمشغل الكبير' : 'Back to player'}
       </button>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="relative">
-          <img
-            src={displayedSong.coverImageUrl}
-            alt={title}
-            className="w-full aspect-square object-cover rounded-3xl shadow-2xl"
-          />
+          <img src={song.coverImageUrl} alt={title} className="w-full aspect-square object-cover rounded-3xl shadow-2xl" />
           <button
             onClick={handlePlayPause}
             className="absolute bottom-4 left-4 bg-rubine text-white p-4 rounded-full shadow-lg hover:bg-tamarind transition"
@@ -207,7 +209,7 @@ export default function SongDetailPage() {
             {composer && <div><span className="text-boho block">الملحن</span><span className="text-camel-coat">{composer}</span></div>}
             {lyricist && <div><span className="text-boho block">كاتب الكلمات</span><span className="text-camel-coat">{lyricist}</span></div>}
             {arranger && <div><span className="text-boho block">الموزع</span><span className="text-camel-coat">{arranger}</span></div>}
-            {displayedSong.year && <div><span className="text-boho block">السنة</span><span className="text-camel-coat">{displayedSong.year}</span></div>}
+            {song.year && <div><span className="text-boho block">السنة</span><span className="text-camel-coat">{song.year}</span></div>}
           </div>
 
           <div className="flex items-center gap-4 flex-wrap">

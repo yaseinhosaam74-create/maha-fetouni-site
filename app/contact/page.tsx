@@ -5,10 +5,16 @@ import ContactForm from '@/components/ContactForm'
 import { useLanguage } from '@/app/context/LanguageContext'
 import { FaFacebook, FaInstagram, FaTwitter, FaYoutube, FaTiktok, FaSnapchat, FaWhatsapp, FaSpotify, FaEnvelope } from 'react-icons/fa'
 
+type SocialLink = {
+  url: string
+  enabled: boolean
+  color: string
+}
+
 export default function ContactPage() {
-  const [socialLinks, setSocialLinks] = useState<Record<string, { url: string; enabled: boolean; color: string }>>({})
+  const [socialLinks, setSocialLinks] = useState<Record<string, SocialLink>>({})
   const [loading, setLoading] = useState(true)
-  const { language } = useLanguage()
+  const { language, t } = useLanguage()
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -44,54 +50,55 @@ export default function ContactPage() {
   })
 
   if (loading) {
-    return <div className="p-8 text-center text-camel-coat">جارٍ التحميل...</div>
+    return (
+      <div className="min-h-screen flex items-center justify-center text-camel-coat">
+        {t('sending') || 'جارٍ التحميل...'}
+      </div>
+    )
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-8">
-      <h1 className="text-3xl font-bold text-camel-coat mb-8">
-        {language === 'ar' ? 'اتصل بنا' : 'Contact Us'}
+    <div className="max-w-xl mx-auto p-4 md:p-8">
+      <h1 className="text-3xl font-bold text-center text-camel-coat mb-8">
+        {t('contact')}
       </h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <div>
-          <h2 className="text-xl font-bold text-camel-coat mb-4">
-            {language === 'ar' ? 'أرسل رسالة' : 'Send a Message'}
-          </h2>
-          <ContactForm />
-        </div>
+      {/* نموذج الرسالة */}
+      <div className="mb-10">
+        <ContactForm />
+      </div>
 
-        <div>
-          <h2 className="text-xl font-bold text-camel-coat mb-4">
-            {language === 'ar' ? 'تابعنا' : 'Follow Us'}
-          </h2>
-          {visibleSocials.length === 0 ? (
-            <p className="text-boho">لا توجد روابط بعد</p>
-          ) : (
-            <div className="grid grid-cols-3 gap-6">
-              {visibleSocials.map((item) => {
-                const Icon = item.icon
-                const link = socialLinks[item.key]
-                return (
-                  <div key={item.key} className="flex flex-col items-center gap-2 group">
-                    <a
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-14 h-14 flex items-center justify-center rounded-full bg-tamarind border border-boho text-2xl transition hover:scale-110"
-                      style={{ color: link.color }}
-                    >
-                      <Icon />
-                    </a>
-                    <span className="text-xs font-bold text-boho opacity-0 group-hover:opacity-100 transition">
-                      {item.label}
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
+      {/* أيقونات التواصل الاجتماعي في سطر واحد */}
+      <div className="text-center">
+        <h2 className="text-lg font-semibold text-boho mb-4">
+          {t('followUs') || 'تابعنا'}
+        </h2>
+        {visibleSocials.length === 0 ? (
+          <p className="text-boho text-sm">{t('noSocialLinks') || 'لا توجد روابط بعد'}</p>
+        ) : (
+          <div className="flex flex-wrap justify-center gap-6">
+            {visibleSocials.map((item) => {
+              const Icon = item.icon
+              const link = socialLinks[item.key]
+              return (
+                <div key={item.key} className="relative group">
+                  <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 rounded bg-italian-roast text-camel-coat text-xs font-bold opacity-0 group-hover:opacity-100 transition pointer-events-none whitespace-nowrap">
+                    {item.label}
+                  </span>
+                  <a
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-3xl transition hover:scale-110"
+                    style={{ color: link.color }}
+                  >
+                    <Icon />
+                  </a>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
     </div>
   )
