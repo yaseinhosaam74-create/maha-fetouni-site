@@ -1,11 +1,12 @@
-const CACHE_NAME = 'maha-ftouni-cache-v1'
+const CACHE_NAME = 'maha-ftouni-cache-v2'
 const urlsToCache = [
   '/',
   '/manifest.json',
   '/offline.html',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
 ]
 
-// تثبيت Service Worker وتخزين الملفات الأساسية
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -14,7 +15,6 @@ self.addEventListener('install', (event) => {
   )
 })
 
-// تفعيل Service Worker وحذف الكاش القديم
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -26,35 +26,33 @@ self.addEventListener('activate', (event) => {
   )
 })
 
-// اعتراض الطلبات وتقديم استجابة من الكاش إن أمكن
 self.addEventListener('fetch', (event) => {
-  // تجاهل الطلبات غير GET أو من نطاقات خارجية
-  if (event.request.method !== 'GET' || !event.request.url.startsWith(self.location.origin)) {
+  const { request } = event
+
+  // تجاهل الطلبات غير GET ومن نطاقات خارجية
+  if (request.method !== 'GET' || !request.url.startsWith(self.location.origin)) {
     return
   }
 
+  // استراتيجية Stale-While-Revalidate
   event.respondWith(
-    caches.match(event.request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse
-        }
-        return fetch(event.request)
-          .then((response) => {
-            // تخزين الاستجابات الناجحة فقط
-            if (response.status === 200) {
-              const responseClone = response.clone()
-              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseClone))
-            }
-            return response
-          })
-          .catch(() => {
-            // عند فشل الاتصال، عرض صفحة offline
-            if (event.request.mode === 'navigate') {
-              return caches.match('/offline.html')
-            }
-            return new Response('', { status: 404 })
-          })
-      })
+    caches.match(request).then((cachedResponse) => {
+      const fetchPromise = fetch(request)
+        .then((response) => {
+          if (response.status === 200) {
+            const responseClone = response.clone()
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(request, responseClone)
+            })
+          }
+          return response
+        })
+        .catch(() => {
+          // عند عدم الاتصال، نرجع cached أو offline
+          return cachedResponse || caches.match('/offline.html')
+        })
+
+      return cachedResponse || fetchPromise
+    })
   )
 })
