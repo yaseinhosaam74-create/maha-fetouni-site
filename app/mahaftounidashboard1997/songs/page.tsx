@@ -22,6 +22,8 @@ type Song = {
   arrangerEn?: string
   lyricsAr?: string
   lyricsEn?: string
+  syncedLyricsAr?: string // 👈 حقل جديد
+  syncedLyricsEn?: string // 👈 حقل جديد
   isPublished: boolean
   plays: number
   likes: number
@@ -50,6 +52,10 @@ export default function AdminSongsPage() {
   const [arrangerEn, setArrangerEn] = useState('')
   const [lyricsAr, setLyricsAr] = useState('')
   const [lyricsEn, setLyricsEn] = useState('')
+  // 👈 الحقول الجديدة للتزامن
+  const [syncedLyricsAr, setSyncedLyricsAr] = useState('')
+  const [syncedLyricsEn, setSyncedLyricsEn] = useState('')
+  
   const [isPublished, setIsPublished] = useState(true)
 
   const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME
@@ -96,6 +102,8 @@ export default function AdminSongsPage() {
     setArrangerEn('')
     setLyricsAr('')
     setLyricsEn('')
+    setSyncedLyricsAr('') // 👈 تصفير الحقل الجديد
+    setSyncedLyricsEn('') // 👈 تصفير الحقل الجديد
     setIsPublished(true)
     setEditingSong(null)
   }
@@ -152,6 +160,8 @@ export default function AdminSongsPage() {
         arrangerEn,
         lyricsAr,
         lyricsEn,
+        syncedLyricsAr, // 👈 حفظ الحقل الجديد
+        syncedLyricsEn, // 👈 حفظ الحقل الجديد
         isPublished,
         plays: editingSong?.plays || 0,
         likes: editingSong?.likes || 0,
@@ -195,6 +205,8 @@ export default function AdminSongsPage() {
     setArrangerEn(song.arrangerEn || '')
     setLyricsAr(song.lyricsAr || '')
     setLyricsEn(song.lyricsEn || '')
+    setSyncedLyricsAr(song.syncedLyricsAr || '') // 👈 جلب الحقل الجديد
+    setSyncedLyricsEn(song.syncedLyricsEn || '') // 👈 جلب الحقل الجديد
     setIsPublished(song.isPublished)
     setShowForm(true)
   }
@@ -290,12 +302,28 @@ export default function AdminSongsPage() {
           </div>
 
           <div>
-            <label className="block mb-1">كلمات الأغنية بالعربية</label>
-            <textarea value={lyricsAr} onChange={(e) => setLyricsAr(e.target.value)} rows={6} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none" />
+            <label className="block mb-1">كلمات الأغنية بالعربية (نص عادي)</label>
+            <textarea value={lyricsAr} onChange={(e) => setLyricsAr(e.target.value)} rows={4} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none" />
           </div>
           <div>
-            <label className="block mb-1">كلمات الأغنية بالإنجليزية</label>
-            <textarea value={lyricsEn} onChange={(e) => setLyricsEn(e.target.value)} rows={6} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none" />
+            <label className="block mb-1">كلمات الأغنية بالإنجليزية (نص عادي)</label>
+            <textarea value={lyricsEn} onChange={(e) => setLyricsEn(e.target.value)} rows={4} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none" />
+          </div>
+
+          {/* 👈 قسم الكلمات المتزامنة الجديد */}
+          <div className="bg-black/20 p-4 rounded-lg border border-white/10 space-y-4">
+            <div>
+              <h3 className="text-sm font-bold text-rubine mb-2">مزامنة الكلمات (LRC Format)</h3>
+              <p className="text-xs text-boho mb-2">استخدم هذا الحقل لإدخال التوقيتات الدقيقة بصيغة <code className="bg-black/50 px-1 rounded">[mm:ss.xx] الكلمة</code> لتعمل المزامنة بشكل مثالي.</p>
+            </div>
+            <div>
+              <label className="block mb-1 text-sm">الكلمات المتزامنة بالعربية (LRC)</label>
+              <textarea value={syncedLyricsAr} onChange={(e) => setSyncedLyricsAr(e.target.value)} rows={5} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none font-mono text-sm" placeholder="[00:15.50] كلمة&#10;[00:19.50] تانية" />
+            </div>
+            <div>
+              <label className="block mb-1 text-sm">الكلمات المتزامنة بالإنجليزية (LRC)</label>
+              <textarea value={syncedLyricsEn} onChange={(e) => setSyncedLyricsEn(e.target.value)} rows={5} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none resize-none font-mono text-sm" placeholder="[00:15.50] Word&#10;[00:19.50] Next word" />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

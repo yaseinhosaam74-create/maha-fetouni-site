@@ -1,30 +1,20 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { collection, query, where, getDocs } from 'firebase/firestore'
 import { useRouter } from 'next/navigation'
 import { db } from '@/lib/firebase'
 import SongCard from '@/components/SongCard'
 import { useLanguage } from '@/app/context/LanguageContext'
-
-type Song = {
-  id: string
-  titleAr: string
-  titleEn: string
-  artistAr?: string
-  artistEn?: string
-  audioUrl: string
-  coverImageUrl: string
-  year?: number
-  isPublished: boolean
-  plays: number
-  likes: number
-}
+import { useAudio, Song } from '@/components/AudioContext' // 👈 استيراد useAudio ونوع Song
 
 export default function SongsPage() {
   const [songs, setSongs] = useState<Song[]>([])
   const [loading, setLoading] = useState(true)
   const { t } = useLanguage()
   const router = useRouter()
+  
+  const { playSongFromPlaylist } = useAudio() // 👈 جلب دالة التشغيل
+  const clickTimeout = useRef<NodeJS.Timeout | null>(null) // 👈 للتحكم في الفرق بين الضغطة والضغطتين
 
   useEffect(() => {
     const fetchSongs = async () => {
@@ -42,8 +32,35 @@ export default function SongsPage() {
     fetchSongs()
   }, [])
 
-  const handleOpenSong = (songId: string) => {
-    router.push(`/songs/${songId}`)
+  // دالة الضغط العادي (تفتح صفحة الأغنية بعد تأخير بسيط)
+  const handleCardClick = (e: React.MouseEvent, songId: string) => {
+    e.preventDefault()
+    
+    // لو فيه ضغطة سابقة، بنلغيها (عشان دي بقت ضغطة مزدوجة)
+    if (clickTimeout.current) {
+      clearTimeout(clickTimeout.current)
+      clickTimeout.current = null
+    } else {
+      // لو مفيش، بنستنى 300 ملي ثانية وننفذ الفتح
+      clickTimeout.current = setTimeout(() => {
+        router.push(`/songs/${songId}`)
+        clickTimeout.current = null
+      }, 300)
+    }
+  }
+
+  // دالة الضغط المزدوج (تشغل الأغنية فوراً)
+  const handleCardDoubleClick = (e: React.MouseEvent, song: Song) => {
+    e.preventDefault()
+    
+    // إلغاء التوقيت بتاع الضغطة الواحدة عشان ميفتحش الصفحة
+    if (clickTimeout.current) {
+      clearTimeout(clickTimeout.current)
+      clickTimeout.current = null
+    }
+    
+    // تشغيل الأغنية وتمرير قائمة الأغاني كاملة للمشغل
+    playSongFromPlaylist(songs, song)
   }
 
   if (loading) {
@@ -58,7 +75,12 @@ export default function SongsPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
           {songs.map((song) => (
-            <div key={song.id} onClick={() => handleOpenSong(song.id)} className="cursor-pointer">
+            <div 
+              key={song.id} 
+              onClick={(e) => handleCardClick(e, song.id)} 
+              onDoubleClick={(e) => handleCardDoubleClick(e, song)}
+              className="cursor-pointer select-none"
+            >
               <SongCard song={song} />
             </div>
           ))}

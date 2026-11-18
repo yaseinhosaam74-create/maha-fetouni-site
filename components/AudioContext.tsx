@@ -23,6 +23,8 @@ export type Song = {
   arrangerEn?: string
   lyricsAr?: string
   lyricsEn?: string
+  syncedLyricsAr?: string
+  syncedLyricsEn?: string
   isPublished: boolean
   plays: number
   likes: number
@@ -63,7 +65,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const nextRef = useRef<() => void>(() => {})
   const prevRef = useRef<() => void>(() => {})
 
-  // جلب الأغاني واختيار الأولى
   useEffect(() => {
     const fetchPlaylist = async () => {
       try {
@@ -74,12 +75,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         if (songsList.length > 0) {
           const firstSong = songsList[0]
           setCurrentSong(firstSong)
-          // تحميل مصدر الأغنية الأولى مسبقًا بدون تشغيل
           if (audioRef.current) {
             audioRef.current.src = firstSong.audioUrl
             audioRef.current.load()
           }
-          // تحديث Media Session فورًا
           setupMediaSession(firstSong)
         }
       } catch (error) {
@@ -89,7 +88,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     fetchPlaylist()
   }, [])
 
-  // إعداد عنصر الصوت مرة واحدة
   useEffect(() => {
     const audio = new Audio()
     audio.preload = 'auto'
@@ -121,12 +119,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // تطبيق الكتم
   useEffect(() => {
     if (audioRef.current) audioRef.current.muted = isMuted
   }, [isMuted])
 
-  // تطبيق مستوى الصوت
   useEffect(() => {
     if (audioRef.current) audioRef.current.volume = volume
   }, [volume])
@@ -141,7 +137,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } catch (error) {
-      console.error('Error caching song:', error)
+      // تجاهل الخطأ بصمت لمنع رسائل التيرمنال المزعجة (CORS Policy)
     }
   }
 
@@ -175,7 +171,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // تشغيل أغنية بأمان
   const playSong = useCallback((song: Song) => {
     const audio = audioRef.current
     if (!audio) return
@@ -230,7 +225,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       audio.pause()
       setIsPlaying(false)
     } else {
-      // إذا لم يكن هناك مصدر محمّل، نشغّل الأغنية الحالية من جديد
       if (!audio.src || audio.src !== currentSong?.audioUrl) {
         if (currentSong) {
           playSong(currentSong)
@@ -297,22 +291,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AudioContext.Provider value={{
-      currentSong,
-      isPlaying,
-      isMuted,
-      currentTime,
-      duration,
-      volume,
-      playlist,
-      playSong,
-      playSongFromPlaylist,
-      togglePlay,
-      toggleMute,
-      seek,
-      next,
-      prev,
-      setVolume: setVolumeValue,
-      setPlaylist,
+      currentSong, isPlaying, isMuted, currentTime, duration, volume, playlist,
+      playSong, playSongFromPlaylist, togglePlay, toggleMute, seek, next, prev, setVolume: setVolumeValue, setPlaylist,
     }}>
       {children}
     </AudioContext.Provider>
