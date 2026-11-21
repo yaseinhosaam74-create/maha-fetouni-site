@@ -1,24 +1,18 @@
 'use client'
-import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { useAudio } from './AudioContext'
 import { useLanguage } from '@/app/context/LanguageContext'
 import { Play, Pause, SkipBack, SkipForward, Download, Share2, Heart, Volume2, VolumeX } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { db } from '@/lib/firebase'
 import { doc, updateDoc, increment } from 'firebase/firestore'
+import { useLocalStorage } from '@/lib/useLocalStorage'
 
 export default function AudioPlayer() {
   const { currentSong, isPlaying, isMuted, currentTime, duration, togglePlay, toggleMute, seek, next, prev, playlist } = useAudio()
-  const { language, t } = useLanguage()
-  const [liked, setLiked] = useState(false)
-
-  useEffect(() => {
-    if (currentSong) {
-      const saved = localStorage.getItem(`liked_${currentSong.id}`)
-      if (saved === 'true') setLiked(true)
-      else setLiked(false)
-    }
-  }, [currentSong])
+  const { language } = useLanguage()
+  const [likedValue, setLikedValue] = useLocalStorage(currentSong ? `liked_${currentSong.id}` : 'liked_none', 'false')
+  const liked = likedValue === 'true'
 
   if (!currentSong) return null
 
@@ -37,7 +31,7 @@ export default function AudioPlayer() {
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-    } catch (error) {
+    } catch {
       toast.error('تعذر التحميل، جرّب فتح الرابط في نافذة جديدة')
     }
   }
@@ -52,7 +46,7 @@ export default function AudioPlayer() {
     if (navigator.share) {
       try {
         await navigator.share(shareData)
-      } catch (error) {
+      } catch {
         toast.error('تعذرت المشاركة')
       }
     } else {
@@ -64,14 +58,13 @@ export default function AudioPlayer() {
   const handleLike = async () => {
     if (!currentSong) return
     const newLiked = !liked
-    setLiked(newLiked)
-    localStorage.setItem(`liked_${currentSong.id}`, String(newLiked))
+    setLikedValue(String(newLiked))
     try {
       await updateDoc(doc(db, 'songs', currentSong.id), {
         likes: increment(newLiked ? 1 : -1),
       })
-    } catch (error) {
-      // تجاهل
+    } catch {
+      setLikedValue(String(liked))
     }
   }
 
@@ -83,7 +76,6 @@ export default function AudioPlayer() {
 
   const progressPercent = duration ? (currentTime / duration) * 100 : 0
 
-  // وظيفة التعامل مع النقر على شريط التقدم (تدعم RTL)
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const isRTL = getComputedStyle(e.currentTarget).direction === 'rtl'
@@ -100,7 +92,6 @@ export default function AudioPlayer() {
   return (
     <div className="fixed bottom-0 left-0 right-0 z-50 flex justify-center px-4 pb-4 pointer-events-none">
       <div className="pointer-events-auto w-full max-w-md bg-italian-roast/95 backdrop-blur-md border border-tamarind rounded-2xl shadow-2xl overflow-hidden">
-        {/* شريط التقدم */}
         <div
           className="h-2 bg-tamarind cursor-pointer relative"
           onClick={handleProgressClick}
@@ -114,10 +105,13 @@ export default function AudioPlayer() {
         <div className="p-4">
           <div className="flex items-center gap-4">
             <div className="relative w-14 h-14 shrink-0">
-              <img
+              <Image
                 src={currentSong.coverImageUrl}
                 alt={title}
-                className="w-full h-full object-cover rounded-lg"
+                fill
+                unoptimized
+                sizes="56px"
+                className="object-cover rounded-lg"
               />
             </div>
             <div className="flex-1 min-w-0">
@@ -127,6 +121,7 @@ export default function AudioPlayer() {
             <button
               onClick={handleLike}
               className={`${liked ? 'text-rubine' : 'text-camel-coat'} hover:text-rubine transition`}
+              aria-label={liked ? 'إزالة الإعجاب' : 'إعجاب'}
             >
               <Heart size={20} fill={liked ? 'currentColor' : 'none'} />
             </button>

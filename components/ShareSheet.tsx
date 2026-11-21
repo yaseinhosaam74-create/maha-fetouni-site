@@ -3,9 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { createPortal } from 'react-dom'
 import {
-  X, Loader2, Download, Check, MessageCircle, Link2,
-  Pencil, Send, Smartphone, Images, ArrowLeft,
-  Heart, Star, Sparkles,
+  X, Loader2, Download, MessageCircle, Link2,
+  Pencil, Send, Images, ArrowLeft,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useLanguage } from '@/app/context/LanguageContext'
@@ -13,11 +12,11 @@ import { getCoverPalette, type CoverPalette } from '@/lib/coverColors'
 import { getPublishedPhotos, type Song } from '@/lib/firestore'
 import {
   SHARE_WATERMARK,
-  CARD_STYLES,
   DEFAULT_SHARE_OPTIONS,
   buildShareCaption,
   buildSongShareCaption,
   drawShareCard,
+  getPublicSiteOrigin,
   getPublicSongUrl,
   renderShareCard,
   type CardAlign,
@@ -27,7 +26,6 @@ import {
   type ShareCardData,
   type ShareCardMode,
   type ShareCardOptions,
-  type Sticker,
 } from '@/lib/shareCard'
 
 const FALLBACK_PALETTE: CoverPalette = {
@@ -36,11 +34,8 @@ const FALLBACK_PALETTE: CoverPalette = {
 }
 
 const STYLES: CardStyle[] = ['classic', 'wide', 'narrow', 'slanted']
-const BACKGROUNDS: CardBackground[] = ['black', 'darkGrey', 'lightGrey', 'white', 'gradient', 'cover']
-const COLOR_PRESETS = ['#FFFFFF', '#000000', '#E11D2A', '#FACC15']
 const ALIGNS: CardAlign[] = ['right', 'center', 'left']
 const FONT_SIZES: FontSize[] = ['S', 'M', 'L']
-const STICKERS: Sticker[] = ['none', 'heart', 'star', 'sparkle']
 type Step = 1 | 2 | 3 | 4
 
 interface ShareSheetProps {
@@ -48,17 +43,11 @@ interface ShareSheetProps {
   lines?: string[]
   language: 'ar' | 'en'
   initialMode?: ShareCardMode
+  initialStep?: Step
   onClose: () => void
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-2 min-w-[190px] flex-1">
-      <p className="text-[11px] font-bold uppercase tracking-wider text-white/45">{label}</p>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
-  )
-}
+// Section removed (old step 2 UI)
 
 function Choice({
   active,
@@ -93,29 +82,30 @@ export default function ShareSheet({
   lines,
   language,
   initialMode = 'lyrics',
+  initialStep = 1,
   onClose,
 }: ShareSheetProps) {
   const { t } = useLanguage()
-  const [step, setStep] = useState<Step>(1)
+  const [step, setStep] = useState<Step>(initialStep)
   const [mode, setMode] = useState<ShareCardMode>(initialMode)
   const [style, setStyle] = useState<CardStyle>(DEFAULT_SHARE_OPTIONS.style)
-  const [background, setBackground] = useState<CardBackground>(DEFAULT_SHARE_OPTIONS.background)
+  const [background, setBackground] = useState<CardBackground>('gradient')
   const [backgroundUrl, setBackgroundUrl] = useState(currentSong.coverImageUrl)
   const [artistImages, setArtistImages] = useState<string[]>([currentSong.coverImageUrl, currentSong.coverImageUrl])
   const [align, setAlign] = useState<CardAlign>(DEFAULT_SHARE_OPTIONS.align)
   const [fontSize, setFontSize] = useState<FontSize>(DEFAULT_SHARE_OPTIONS.fontSize)
   const [lyricsColor, setLyricsColor] = useState(DEFAULT_SHARE_OPTIONS.lyricsColor)
   const showWatermark = DEFAULT_SHARE_OPTIONS.showWatermark
-  const [sticker, setSticker] = useState<Sticker>(DEFAULT_SHARE_OPTIONS.sticker)
+  const sticker = DEFAULT_SHARE_OPTIONS.sticker
   const [palette, setPalette] = useState<CoverPalette>(FALLBACK_PALETTE)
-  const [selectedLines, setSelectedLines] = useState<number[]>(() =>
-    Array.from(new Set((lines ?? []).map((line) => line.trim()).filter(Boolean)))
-      .slice(0, 4)
-      .map((_, index) => index)
-  )
+  const MAX_SHARE_LINES = 5
+  const [selectedLines, setSelectedLines] = useState<number[]>([])
   const [isEditing, setIsEditing] = useState(false)
   const [editedText, setEditedText] = useState('')
   const [busyAction, setBusyAction] = useState('')
+  const [editOpen, setEditOpen] = useState(false)
+  const [editTab, setEditTab] = useState<'color' | 'text' | 'images'>('color')
+  const [, setGalleryImages] = useState<string[]>([])
   const [isMounted, setIsMounted] = useState(false)
   const [isPreviewReady, setIsPreviewReady] = useState(false)
   const previewRef = useRef<HTMLCanvasElement>(null)
@@ -143,13 +133,13 @@ export default function ShareSheet({
   )
 
   useEffect(() => {
-    setSelectedLines(uniqueLines.slice(0, 4).map((_, index) => index))
+    setSelectedLines([])
     setBackgroundUrl(currentSong.coverImageUrl)
     setEditedText('')
     setIsEditing(false)
-    setStep(1)
+    setStep(initialStep)
     setMode(initialMode)
-  }, [currentSong.id, currentSong.coverImageUrl, uniqueLines, initialMode])
+  }, [currentSong.id, currentSong.coverImageUrl, initialMode, initialStep])
 
   useEffect(() => {
     let cancelled = false
@@ -163,14 +153,15 @@ export default function ShareSheet({
     let cancelled = false
     void getPublishedPhotos()
       .then((photos) => {
-        const urls = photos.filter((photo) => photo.isPublished && photo.imageUrl).slice(0, 2).map((photo) => photo.imageUrl)
-        if (!cancelled) {
-          setArtistImages([currentSong.coverImageUrl, urls[0] ?? currentSong.coverImageUrl])
-        }
+        const urls = photos.filter((photo) => photo.isPublished && photo.imageUrl).map((photo) => photo.imageUrl)
+        if (cancelled) return
+        setGalleryImages(urls)
+        const shuffled = [...urls].sort(() => Math.random() - 0.5).slice(0, 5)
+        setArtistImages([currentSong.coverImageUrl, ...shuffled])
       })
       .catch(() => undefined)
     return () => { cancelled = true }
-  }, [currentSong.id, currentSong.coverImageUrl])
+  }, [currentSong.id, currentSong.coverImageUrl, editOpen])
 
   const selectedTexts = useMemo(
     () => selectedLines.map((index) => uniqueLines[index]).filter((line): line is string => Boolean(line)),
@@ -203,11 +194,12 @@ export default function ShareSheet({
     }),
     [currentSong.coverImageUrl, backgroundUrl, palette, cardLines, title, subtitle, artist, language]
   )
+  const siteOrigin = useMemo(() => getPublicSiteOrigin(), [])
   const publicLink = useMemo(() => getPublicSongUrl(currentSong.id), [currentSong.id])
-  const songPageUrl = useMemo(
-    () => publicLink || (typeof window === 'undefined' ? '' : `${window.location.origin}/songs/${currentSong.id}`),
-    [publicLink, currentSong.id]
-  )
+  const songPageUrl = useMemo(() => {
+    if (currentSong.id) return publicLink
+    return siteOrigin
+  }, [currentSong.id, publicLink, siteOrigin])
   const caption = useMemo(
     () => mode === 'song'
       ? buildSongShareCaption({ title, artist: shareArtist }, publicLink)
@@ -247,9 +239,16 @@ export default function ShareSheet({
     document.documentElement.style.overflow = 'hidden'
     closeRef.current?.focus()
 
+    const closeSheet = () => {
+      document.body.style.overflow = bodyOverflowRef.current
+      document.documentElement.style.overflow = htmlOverflowRef.current
+      onCloseRef.current()
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        onCloseRef.current()
+        event.preventDefault()
+        closeSheet()
         return
       }
       if (event.key !== 'Tab') return
@@ -286,19 +285,15 @@ export default function ShareSheet({
 
   const toggleLine = (index: number) => {
     const isSelected = selectedLines.includes(index)
-    if (isSelected && selectedLines.length === 1) {
-      toast.error(t('selectAtLeastOne'))
+    if (isSelected) {
+      setSelectedLines((previous) => previous.filter((item) => item !== index))
       return
     }
-    if (!isSelected && selectedLines.length >= 4) {
+    if (selectedLines.length >= MAX_SHARE_LINES) {
       toast.error(t('maxLines'))
       return
     }
-    setSelectedLines((previous) =>
-      previous.includes(index)
-        ? previous.filter((item) => item !== index)
-        : [...previous, index].sort((a, b) => a - b)
-    )
+    setSelectedLines((previous) => [...previous, index].sort((a, b) => a - b))
   }
 
   const downloadPng = (dataUrl: string) => {
@@ -344,25 +339,13 @@ export default function ShareSheet({
     }
   }
 
-  const nativeImageShare = async (blob: Blob): Promise<'shared' | 'unsupported'> => {
-    if (!navigator.share || typeof navigator.canShare !== 'function') return 'unsupported'
-    const file = new File([blob], `${SHARE_WATERMARK}.png`, { type: 'image/png' })
-    try {
-      if (!navigator.canShare({ files: [file] })) return 'unsupported'
-      await navigator.share({ files: [file], title, text: caption })
-      return 'shared'
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'shared'
-      return 'unsupported'
-    }
-  }
-
   const handleDownload = () => {
     void withExport('download', ({ dataUrl }) => {
       downloadPng(dataUrl)
       toast.success(t('imageSaved'))
     })
   }
+  const downloadPngFromCurrent = () => { void withExport('download', ({ dataUrl }) => downloadPng(dataUrl)) }
 
   const handleCopyLink = async () => {
     try {
@@ -374,7 +357,10 @@ export default function ShareSheet({
   }
 
   const handleWhatsapp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(songPageUrl || caption)}`, '_blank', 'noopener,noreferrer')
+    void withExport('whatsapp', async ({ dataUrl }) => {
+      downloadPng(dataUrl)
+      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer')
+    })
   }
 
   const handleSms = () => {
@@ -382,40 +368,40 @@ export default function ShareSheet({
   }
 
   const handleStory = () => {
-    void withExport('story', async ({ dataUrl, blob }) => {
+    void withExport('story', async ({ dataUrl }) => {
       downloadPng(dataUrl)
-      const result = await nativeImageShare(blob)
-      if (result === 'unsupported') toast.success(t('uploadInstruction'))
+      toast.success(t('uploadInstruction'))
     })
   }
 
   const startEditing = () => {
     setEditedText(selectedTexts.join('\n'))
     setIsEditing(true)
-    setStep(2)
+    setEditTab('color')
+    setEditOpen(true)
   }
 
   const busyIcon = (action: string, fallback: React.ReactNode) =>
     busyAction === action ? <Loader2 className="animate-spin" size={16} /> : fallback
   const busy = Boolean(busyAction) || (step >= 2 && !isPreviewReady)
   const stepTitle = step === 1 ? t('selectLyrics') : step === 2 ? t('customizeCard') : step === 3 ? t('shareSong') : t('share')
-  const shareActionClass =
-    'flex shrink-0 items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap border border-white/10 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-40'
+  // shareActionClass removed in Step 6 redesign
 
-  const stickerIcon = (value: Sticker) => {
-    if (value === 'heart') return <Heart size={15} />
-    if (value === 'star') return <Star size={15} />
-    if (value === 'sparkle') return <Sparkles size={15} />
-    return <X size={15} />
-  }
+  // stickerIcon removed
 
   if (!isMounted) return null
+
+  const gradientBg = `linear-gradient(180deg, ${palette.dominant} 0%, ${palette.palette[1] ?? palette.dominant} 55%, ${palette.palette[2] ?? palette.dominant} 100%)`
+  const bgStyle = step === 1
+    ? { background: gradientBg }
+    : { background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' }
 
   return createPortal(
     <div
       ref={sheetRef}
       onClick={onClose}
-      className="fixed inset-0 z-[200] flex flex-col bg-black/95 backdrop-blur-xl text-white"
+      className="fixed inset-0 z-[200] flex flex-col text-white"
+      style={bgStyle}
       dir={language === 'ar' ? 'rtl' : 'ltr'}
     >
       <div
@@ -423,49 +409,59 @@ export default function ShareSheet({
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
       >
         <div className="mx-auto w-full max-w-3xl px-4 pt-6 pb-[120px]">
-        <header className="flex items-start justify-between gap-4 mb-6">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-rubine mb-1">
-              {t('step')} {step}/4
-            </p>
-            <h2 className="text-2xl font-black">{stepTitle}</h2>
-            <p className="text-sm text-white/50 mt-1">{title} · {shareArtist}</p>
-          </div>
-          <button
-            ref={closeRef}
-            onClick={onClose}
-            className="w-11 h-11 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-            title={t('close')}
-            aria-label={t('close')}
-          >
-            <X size={23} />
-          </button>
+        <header className={`relative mb-6 ${step === 1 ? 'pt-2 pb-2' : 'flex items-start justify-between gap-4'}`}>
+          {step === 1 ? (
+            <>
+              <button
+                ref={closeRef}
+                onClick={onClose}
+                className="absolute left-0 top-1 w-11 h-11 rounded-full flex items-center justify-center text-white/80 hover:text-white"
+                title={t('close')}
+                aria-label={t('close')}
+              >
+                <ArrowLeft size={28} />
+              </button>
+              <div className="text-center px-12">
+                <h2 className="text-4xl font-black tracking-tight">{t('selectLyrics')}</h2>
+                <p className="text-sm text-white/55 mt-2">
+                  {selectedLines.length >= MAX_SHARE_LINES ? t('maxLines') : `${selectedLines.length} ${language === 'ar' ? 'سطور محددة' : 'lines selected'}`}
+                </p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <h2 className="text-2xl font-black">{stepTitle}</h2>
+                <p className="text-sm text-white/50 mt-1">{title} · {shareArtist}</p>
+              </div>
+              <button
+                ref={closeRef}
+                onClick={onClose}
+                className="w-11 h-11 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
+                title={t('close')}
+                aria-label={t('close')}
+              >
+                <X size={23} />
+              </button>
+            </>
+          )}
         </header>
 
         {step === 1 && (
-          <div className="space-y-5">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-black">{t('selectLyrics')}</h3>
-              <span className="text-xs font-bold text-white/55">{selectedLines.length}/4 {t('linesSelected')}</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-[120px]">
-              {uniqueLines.slice(0, 24).map((line, index) => {
+          <div className="pb-[120px]">
+            <div className="flex flex-col items-center gap-7 py-4">
+              {uniqueLines.map((line, index) => {
                 const isSelected = selectedLines.includes(index)
                 return (
                   <button
                     key={`${index}-${line}`}
                     type="button"
                     onClick={() => toggleLine(index)}
-                    className={`flex items-center gap-3 rounded-2xl px-4 py-3 text-start text-sm font-bold transition ${
-                      isSelected ? 'bg-white text-black shadow-lg' : 'bg-white/10 text-white/65 hover:bg-white/15'
+                    className={`w-full text-center text-[2rem] leading-tight font-black tracking-tight transition-colors ${
+                      isSelected ? 'text-white' : 'text-white/35 hover:text-white/55'
                     }`}
                   >
-                    <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center text-[11px] ${
-                      isSelected ? 'bg-black text-white' : 'bg-white/10 text-white/60'
-                    }`}>
-                      {isSelected ? <Check size={13} /> : index + 1}
-                    </span>
-                    <span className="line-clamp-2">{line}</span>
+                    {line}
                   </button>
                 )
               })}
@@ -474,131 +470,99 @@ export default function ShareSheet({
         )}
 
         {step >= 2 && (
-          <div className="flex justify-center rounded-2xl border border-white/10 bg-black/60 p-3">
+          <div className="flex justify-center rounded-3xl p-2" style={{ background: `${palette.dominant}22` }}>
             <canvas
               ref={previewRef}
-              className="rounded-lg shadow-2xl"
+              className="rounded-2xl shadow-2xl"
               style={{ width: 'auto', maxWidth: '100%', maxHeight: 'min(52vh, 580px)' }}
             />
           </div>
         )}
 
-        {step === 2 && (
-          <div className="mt-6 space-y-6">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="w-full text-[11px] font-bold uppercase tracking-wider text-white/45">{t('layout')}</p>
-              {STYLES.map((value) => (
-                <Choice key={value} active={style === value} onClick={() => setStyle(value)}>
-                  {t(`style_${value}`)} <span className="opacity-55">({CARD_STYLES[value].label})</span>
-                </Choice>
-              ))}
-            </div>
-
-            <div className="flex flex-wrap gap-5">
-              <Section label={t('lyricsColor')}>
-                {COLOR_PRESETS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => setLyricsColor(color)}
-                    aria-label={color}
-                    aria-pressed={lyricsColor.toLowerCase() === color.toLowerCase()}
-                    className={`w-9 h-9 rounded-full border-2 transition ${
-                      lyricsColor.toLowerCase() === color.toLowerCase() ? 'border-white scale-110' : 'border-white/25'
-                    }`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </Section>
-
-              <Section label={t('images')}>
-                {artistImages.map((url, index) => (
-                  <button
-                    key={`${url}-${index}`}
-                    type="button"
-                    onClick={() => setBackgroundUrl(url)}
-                    aria-label={`${t('images')} ${index + 1}`}
-                    aria-pressed={backgroundUrl === url}
-                    className={`relative w-14 h-14 rounded-xl overflow-hidden border-2 transition ${
-                      backgroundUrl === url ? 'border-white scale-105' : 'border-white/20'
-                    }`}
-                  >
-                    <Image src={url} alt="" fill unoptimized sizes="56px" className="object-cover" />
+        {editOpen && (
+          <div className="fixed inset-x-0 bottom-0 z-[220] px-3 pb-3" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto max-w-3xl rounded-3xl bg-zinc-900/95 border border-white/10 p-4 space-y-4 backdrop-blur-xl">
+              <div className="flex gap-2 bg-white/10 p-1 rounded-xl w-fit mx-auto">
+                {(['color', 'text', 'images'] as const).map((tab) => (
+                  <button key={tab} type="button" onClick={() => setEditTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-bold ${editTab === tab ? 'bg-white text-black' : 'text-white/70'}`}>
+                    {tab === 'color' ? (language === 'ar' ? 'اللون' : 'Color') : tab === 'text' ? (language === 'ar' ? 'النص' : 'Text') : (language === 'ar' ? 'الصور' : 'Images')}
                   </button>
                 ))}
-              </Section>
+              </div>
 
-              <Section label={t('alignment')}>
-                {ALIGNS.map((value) => (
-                  <Choice key={value} active={align === value} onClick={() => setAlign(value)}>
-                    {t(`align${value.charAt(0).toUpperCase()}${value.slice(1)}`)}
-                  </Choice>
-                ))}
-              </Section>
+              {editTab === 'color' && (
+                <div className="flex flex-wrap gap-3 justify-center">
+                  {Array.from(new Set([palette.dominant, ...palette.palette, '#FFFFFF', '#000000'])).map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => { setBackground('gradient'); setLyricsColor('#FFFFFF'); setPalette((p) => ({ ...p, dominant: color, palette: [color, p.palette[1] || color, p.palette[2] || color] })) }}
+                      className={`w-11 h-11 rounded-full border-2 ${palette.dominant.toLowerCase() === color.toLowerCase() && background === 'gradient' ? 'border-white scale-110' : 'border-white/20'}`}
+                      style={{ backgroundColor: color }}
+                      aria-label={color}
+                    />
+                  ))}
+                </div>
+              )}
 
-              <Section label={t('fontSize')}>
-                {FONT_SIZES.map((value) => (
-                  <Choice key={value} active={fontSize === value} onClick={() => setFontSize(value)}>
-                    <span className={value === 'S' ? 'text-xs' : value === 'M' ? 'text-base' : 'text-xl'}>a</span>
-                  </Choice>
-                ))}
-              </Section>
+              {editTab === 'text' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {STYLES.map((value) => (
+                      <Choice key={value} active={style === value} onClick={() => setStyle(value)}>
+                        {t(`style_${value}`)}
+                      </Choice>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {ALIGNS.map((value) => (
+                      <Choice key={value} active={align === value} onClick={() => setAlign(value)}>
+                        {t(`align${value.charAt(0).toUpperCase()}${value.slice(1)}`)}
+                      </Choice>
+                    ))}
+                    {FONT_SIZES.map((value) => (
+                      <Choice key={value} active={fontSize === value} onClick={() => setFontSize(value)}>
+                        <span className={value === 'S' ? 'text-xs' : value === 'M' ? 'text-base' : 'text-xl'}>a</span>
+                      </Choice>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-              <Section label={t('stickers')}>
-                {STICKERS.map((value) => (
-                  <Choice key={value} active={sticker === value} onClick={() => setSticker(value)} title={t(`sticker_${value}`)}>
-                    {stickerIcon(value)}
-                  </Choice>
-                ))}
-              </Section>
+              {editTab === 'images' && (
+                <div className="flex flex-wrap gap-3 justify-center">
+                  {artistImages.map((url, index) => (
+                    <button
+                      key={`${url}-${index}`}
+                      type="button"
+                      onClick={() => { setBackground('cover'); setBackgroundUrl(url) }}
+                      className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 ${background === 'cover' && backgroundUrl === url ? 'border-white scale-105' : 'border-white/20'}`}
+                    >
+                      <Image src={url} alt="" fill unoptimized sizes="64px" className="object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              <Section label={t('background')}>
-                {BACKGROUNDS.map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setBackground(value)}
-                    aria-label={t(`bg_${value}`)}
-                    aria-pressed={background === value}
-                    className={`w-10 h-10 rounded-lg border-2 transition ${
-                      background === value ? 'border-white scale-105' : 'border-white/20'
-                    }`}
-                    style={{
-                      background:
-                        value === 'cover'
-                          ? `center / cover no-repeat url("${backgroundUrl}")`
-                          : value === 'gradient'
-                            ? `linear-gradient(135deg, ${palette.palette.join(', ')})`
-                            : value === 'white'
-                              ? '#FFFFFF'
-                              : value === 'lightGrey'
-                                ? '#D9D9D9'
-                                : value === 'darkGrey'
-                                  ? '#1F1F1F'
-                                  : '#000000',
-                    }}
-                  />
-                ))}
-              </Section>
+              <button type="button" onClick={() => setEditOpen(false)} className="w-full rounded-full bg-white text-black py-3 font-black">
+                {language === 'ar' ? 'تم' : 'Done'}
+              </button>
             </div>
           </div>
         )}
 
         {step === 3 && (
-          <div className="mt-6 space-y-4">
-            <div className="flex gap-2 bg-white/5 p-1 rounded-xl w-fit">
-              <Choice active={mode === 'song'} onClick={() => setMode('song')}>{t('tabSong')}</Choice>
-              <Choice active={mode === 'lyrics'} onClick={() => setMode('lyrics')}>{t('tabLyrics')}</Choice>
+          <div className="mt-6 space-y-4 flex flex-col items-center">
+            <div className="flex gap-2 bg-white/10 p-1 rounded-xl w-fit">
+              <span className="px-4 py-2 rounded-lg text-sm font-bold bg-white/15 text-white">{language === 'ar' ? 'كلمات' : 'Lyrics'}</span>
             </div>
-            {mode === 'lyrics' && (
-              <button
-                type="button"
-                onClick={startEditing}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/15"
-              >
-                <Pencil size={15} /> {t('editLyrics')}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={startEditing}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/15"
+            >
+              <Pencil size={15} /> {t('editLyrics')}
+            </button>
           </div>
         )}
         </div>
@@ -613,8 +577,13 @@ export default function ShareSheet({
           {step === 1 && (
             <button
               type="button"
-              onClick={() => setStep(2)}
-              className="w-full rounded-full bg-white py-3.5 text-sm font-black text-black transition hover:bg-white/90"
+              onClick={() => { setMode('lyrics'); setStep(3) }}
+              disabled={selectedLines.length === 0}
+              className={`w-full rounded-full py-4 text-lg font-black transition ${
+                selectedLines.length === 0
+                  ? 'bg-white/20 text-white/45 cursor-not-allowed'
+                  : 'bg-white/90 text-black hover:bg-white'
+              }`}
             >
               {t('continue')}
             </button>
@@ -660,35 +629,24 @@ export default function ShareSheet({
                   {busyIcon('download', <Download size={15} />)} {t('downloadPng')}
                 </button>
               </div>
-              <div className="space-y-2">
-                <p className="text-sm font-black">{t('shareWithMessages')}</p>
-                <p className="text-xs text-white/50">{t('inviteFriends')}</p>
-                <div className="flex gap-3 overflow-x-auto pb-1" dir="ltr">
-                  <button type="button" onClick={() => void handleCopyLink()} className={shareActionClass}>
-                    <span className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center"><Link2 size={16} /></span>
-                    {t('copyLink')}
+              <div className="flex gap-4 overflow-x-auto pb-1 justify-start sm:justify-center" dir="ltr">
+                {[
+                  { key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={22} />, bg: 'bg-[#25D366]', onClick: handleWhatsapp },
+                  { key: 'instagram', label: 'Instagram', icon: <Images size={22} />, bg: 'bg-gradient-to-br from-fuchsia-500 via-red-500 to-orange-400', onClick: handleStory },
+                  { key: 'tiktok', label: 'TikTok', icon: <span className="font-black text-lg">♪</span>, bg: 'bg-black border border-white/20', onClick: handleStory },
+                  { key: 'snapchat', label: 'Snapchat', icon: <span className="font-black text-lg">👻</span>, bg: 'bg-[#FFFC00] text-black', onClick: handleStory },
+                  { key: 'facebook', label: 'Facebook', icon: <span className="font-black text-xl">f</span>, bg: 'bg-[#1877F2]', onClick: () => { downloadPngFromCurrent(); window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(songPageUrl)}`, '_blank', 'noopener,noreferrer') } },
+                  { key: 'telegram', label: 'Telegram', icon: <Send size={22} />, bg: 'bg-[#229ED9]', onClick: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(songPageUrl)}&text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer') },
+                  { key: 'x', label: 'X', icon: <span className="font-black text-lg">X</span>, bg: 'bg-black border border-white/20', onClick: () => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(songPageUrl)}&text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer') },
+                  { key: 'sms', label: 'SMS', icon: <Send size={22} />, bg: 'bg-[#34C759]', onClick: handleSms },
+                  { key: 'copy', label: t('copyLink'), icon: <Link2 size={22} />, bg: 'bg-white/20', onClick: () => void handleCopyLink() },
+                  { key: 'download', label: t('downloadPng'), icon: busyIcon('download', <Download size={22} />), bg: 'bg-white/20', onClick: handleDownload },
+                ].map((item) => (
+                  <button key={item.key} type="button" onClick={item.onClick} disabled={busy && item.key !== 'copy' && item.key !== 'sms' && item.key !== 'x' && item.key !== 'telegram'} className="flex flex-col items-center gap-2 text-[11px] text-white/80 min-w-[64px] disabled:opacity-40">
+                    <span className={`w-14 h-14 rounded-full text-white flex items-center justify-center ${item.bg}`}>{item.icon}</span>
+                    {item.label}
                   </button>
-                  <button type="button" onClick={handleWhatsapp} className={shareActionClass}>
-                    <span className="w-8 h-8 rounded-full bg-[#25D366] text-black flex items-center justify-center"><MessageCircle size={16} /></span>
-                    WhatsApp
-                  </button>
-                  <button type="button" onClick={handleStory} disabled={busy} className={shareActionClass}>
-                    <span className="w-8 h-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-orange-400 text-white flex items-center justify-center">
-                      {busyIcon('story', <Images size={16} />)}
-                    </span>
-                    {t('stories')}
-                  </button>
-                  <button type="button" onClick={handleSms} className={shareActionClass}>
-                    <span className="w-8 h-8 rounded-full bg-[#3B82F6] text-white flex items-center justify-center"><Send size={16} /></span>
-                    SMS
-                  </button>
-                  <button type="button" onClick={handleStory} disabled={busy} className={shareActionClass}>
-                    <span className="w-8 h-8 rounded-full bg-[#128C7E] text-white flex items-center justify-center">
-                      {busyIcon('story', <Smartphone size={16} />)}
-                    </span>
-                    {t('status')}
-                  </button>
-                </div>
+                ))}
               </div>
             </>
           )}

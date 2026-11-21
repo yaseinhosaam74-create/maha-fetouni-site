@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs } from 'firebase/firestore'
+import type { Timestamp } from 'firebase/firestore'
 import { useLanguage } from '@/app/context/LanguageContext'
 import { ImageOff } from 'lucide-react'
 
@@ -10,7 +12,7 @@ type Photo = {
   id: string
   imageUrl: string
   isPublished: boolean
-  createdAt?: any
+  createdAt?: Timestamp
 }
 
 export default function GalleryPage() {
@@ -53,14 +55,15 @@ export default function GalleryPage() {
           {photos.map((photo) => (
             <div
               key={photo.id}
-              className="aspect-square overflow-hidden rounded-xl bg-tamarind cursor-pointer group"
+              className="relative aspect-square overflow-hidden rounded-xl bg-tamarind cursor-pointer group"
               onClick={() => router.push(`/gallery/photo/${photo.id}`)}
             >
-              <img
+              <Image
                 src={photo.imageUrl}
-                alt="صورة"
-                className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                loading="lazy"
+                alt={`صورة من المعرض ${photo.id}`}
+                fill
+                sizes="(max-width: 768px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                className="object-cover transition-transform duration-300 group-hover:scale-105"
               />
             </div>
           ))}

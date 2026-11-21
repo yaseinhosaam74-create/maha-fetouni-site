@@ -63,7 +63,7 @@ export default function PhotoViewer({ photos, initialIndex, initialPhoto }: Phot
     if (navigator.share) {
       try {
         await navigator.share({ title: 'صورة', text: 'شاهد هذه الصورة', url: photoUrl })
-      } catch (error) {
+      } catch {
         toast.error('تعذرت المشاركة')
       }
     } else {
@@ -85,14 +85,14 @@ export default function PhotoViewer({ photos, initialIndex, initialPhoto }: Phot
       link.click()
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
-    } catch (error) {
+    } catch {
       toast.error('تعذر التحميل')
     }
   }
 
   return (
     <div
-      className="fixed inset-0 z-[10000] bg-black flex items-center justify-center"
+      className="fixed inset-0 z-[1000] bg-black flex items-center justify-center"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

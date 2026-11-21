@@ -36,7 +36,7 @@ export default function CursorEffect() {
   return (
     <div
       ref={cursorRef}
-      className="fixed pointer-events-none z-[99999] w-6 h-6 rounded-full bg-rubine opacity-40 mix-blend-difference"
+      className="fixed pointer-events-none z-[900] w-6 h-6 rounded-full bg-rubine opacity-40 mix-blend-difference"
       style={{
         left: '-12px',
         top: '-12px',

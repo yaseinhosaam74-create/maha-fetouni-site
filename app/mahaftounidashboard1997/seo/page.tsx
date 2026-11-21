@@ -13,7 +13,7 @@ export default function AdminSeoPage() {
       try {
         const settings = await getSeoSettings()
         setSeoSettings(settings)
-      } catch (error) {
+      } catch {
         toast.error('تعذر جلب إعدادات SEO')
       } finally {
         setLoading(false)
@@ -47,7 +47,7 @@ export default function AdminSeoPage() {
     try {
       await saveSeoSettings(seoSettings)
       toast.success('تم حفظ إعدادات SEO')
-    } catch (error) {
+    } catch {
       toast.error('تعذر الحفظ')
     } finally {
       setSubmitting(false)

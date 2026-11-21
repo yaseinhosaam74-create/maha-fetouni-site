@@ -1,5 +1,6 @@
 'use client'
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useEffect } from 'react'
+import { useLocalStorage } from '@/lib/useLocalStorage'
 
 type Theme = 'dark' | 'light'
 
@@ -12,19 +13,12 @@ type ThemeContextType = {
 const ThemeContext = createContext<ThemeContextType | null>(null)
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>('dark')
-
-  useEffect(() => {
-    const stored = localStorage.getItem('theme')
-    if (stored === 'dark' || stored === 'light') {
-      setTheme(stored)
-    }
-  }, [])
+  const [storedTheme, setStoredTheme] = useLocalStorage('theme', 'dark')
+  const theme: Theme = storedTheme === 'light' ? 'light' : 'dark'
 
   useEffect(() => {
     document.body.classList.remove('dark', 'light')
     document.body.classList.add(theme)
-    // تغيير لون خلفية الصفحة مباشرة
     if (theme === 'dark') {
       document.body.style.backgroundColor = '#280B0F'
       document.body.style.color = '#C6B39A'
@@ -34,15 +28,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme])
 
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(newTheme)
-    localStorage.setItem('theme', newTheme)
+  const changeTheme = (newTheme: Theme) => {
+    setStoredTheme(newTheme)
   }
 
-  const changeTheme = (newTheme: Theme) => {
-    setTheme(newTheme)
-    localStorage.setItem('theme', newTheme)
+  const toggleTheme = () => {
+    changeTheme(theme === 'dark' ? 'light' : 'dark')
   }
 
   return (

@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import Image from 'next/image'
 
 type AlbumCardProps = {
   id: string
@@ -11,11 +12,14 @@ export default function AlbumCard({ id, title, coverImageUrl, description }: Alb
   return (
     <Link href={`/gallery/${id}`} className="block group">
       <div className="bg-tamarind rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition">
-        <div className="aspect-square overflow-hidden">
-          <img
+        <div className="relative aspect-square overflow-hidden">
+          <Image
             src={coverImageUrl}
             alt={title}
-            className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+            fill
+            unoptimized
+            sizes="(max-width: 768px) 100vw, 33vw"
+            className="object-cover group-hover:scale-105 transition duration-500"
           />
         </div>
         <div className="p-4">

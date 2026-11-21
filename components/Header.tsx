@@ -5,16 +5,18 @@ import { Home, Music, Camera, Info, Mail, Languages, Sun, Moon, QrCode, UserPlus
 import { useLanguage } from '@/app/context/LanguageContext'
 import { useTheme } from '@/components/ThemeContext'
 import { useState, useEffect } from 'react'
-import toast from 'react-hot-toast'
 import QRModal from './QRModal'
+import ShareSheet from './ShareSheet'
 import { db } from '@/lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
+import type { Song } from '@/lib/firestore'
 
 export default function Header() {
   const pathname = usePathname()
   const { language, setLanguage, t } = useLanguage()
   const { theme, toggleTheme } = useTheme()
   const [showQr, setShowQr] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [siteName, setSiteName] = useState('')
   const isActive = (path: string) => pathname === path
@@ -44,22 +46,19 @@ export default function Header() {
     { href: '/contact', label: t('contact'), icon: Mail },
   ]
 
-  const handleShareApp = async () => {
-    const shareData = {
-      title: siteName,
-      text: 'استمع إلى أغاني مهى فتوني',
-      url: window.location.origin,
-    }
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData)
-      } catch (error) {
-        toast.error('تعذرت المشاركة')
-      }
-    } else {
-      navigator.clipboard.writeText(window.location.origin)
-      toast.success('تم نسخ رابط الموقع')
-    }
+  const shareSong: Song = {
+    id: '',
+    titleAr: siteName || 'مهى فتوني',
+    titleEn: siteName || 'Maha Ftouni',
+    artistAr: 'مهى فتوني',
+    artistEn: 'Maha Ftouni',
+    albumAr: language === 'ar' ? 'الموقع الرسمي' : 'Official Website',
+    albumEn: 'Official Website',
+    coverImageUrl: '/icon-512x512.png',
+    audioUrl: '',
+    plays: 0,
+    likes: 0,
+    isPublished: true,
   }
 
   const handleSaveContact = () => {
@@ -77,9 +76,9 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-italian-roast/80 backdrop-blur-md sticky top-0 z-50" suppressHydrationWarning>
+    <header className="bg-italian-roast/80 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-2">
-        <Link href="/" className="text-2xl font-bold text-camel-coat" suppressHydrationWarning>
+        <Link href="/" className="text-2xl font-bold text-camel-coat">
           {siteName || t('siteName')}
         </Link>
 
@@ -95,7 +94,7 @@ export default function Header() {
               }`}
             >
               <item.icon size={18} />
-              <span className="hidden sm:inline" suppressHydrationWarning>{item.label}</span>
+              <span className="hidden sm:inline">{item.label}</span>
             </Link>
           ))}
         </nav>
@@ -113,13 +112,22 @@ export default function Header() {
           <button onClick={handleSaveContact} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title="تحميل جهة الاتصال">
             <UserPlus size={20} />
           </button>
-          <button onClick={handleShareApp} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title="مشاركة الموقع">
+          <button onClick={() => setShowShare(true)} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title={t('share')}>
             <Share2 size={20} />
           </button>
         </div>
       </div>
 
       <QRModal isOpen={showQr} onClose={() => setShowQr(false)} />
+      {showShare && (
+        <ShareSheet
+          currentSong={shareSong}
+          language={language}
+          initialMode="song"
+          initialStep={4}
+          onClose={() => setShowShare(false)}
+        />
+      )}
     </header>
   )
 }

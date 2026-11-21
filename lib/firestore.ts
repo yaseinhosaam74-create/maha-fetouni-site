@@ -1,5 +1,16 @@
 import { db } from './firebase'
-import { collection, getDocs, doc, getDoc, query, where, deleteDoc, setDoc } from 'firebase/firestore'
+import {
+  collection,
+  getDocs,
+  doc,
+  getDoc,
+  query,
+  where,
+  runTransaction,
+  type Timestamp,
+} from 'firebase/firestore'
+
+type FirestoreDate = Timestamp | Date | null
 
 export type Song = {
   id: string
@@ -20,17 +31,22 @@ export type Song = {
   arrangerEn?: string
   lyricsAr?: string
   lyricsEn?: string
+  syncedLyricsAr?: string
+  syncedLyricsEn?: string
+  lrcUrl?: string
+  lrcUrlAr?: string
+  lrcUrlEn?: string
   isPublished: boolean
   plays: number
   likes: number
-  createdAt?: any
+  createdAt?: FirestoreDate
 }
 
 export type Photo = {
   id: string
   imageUrl: string
   isPublished: boolean
-  createdAt?: any
+  createdAt?: FirestoreDate
 }
 
 export async function getPublishedSongs(): Promise<Song[]> {
@@ -73,40 +89,71 @@ export async function getSiteSettings() {
 
 // ============ دوال الإعجابات ============
 
-// إعجاب بأغنية معينة من جهاز معين
-export async function likeSong(songId: string, deviceId: string) {
-  const likeRef = doc(db, 'likes', `${deviceId}_${songId}`)
-  await setDoc(likeRef, {
-    deviceId,
-    songId,
-    createdAt: new Date(),
-  })
-  // تحديث العداد في الأغنية
+function getLikeRef(songId: string, deviceId: string) {
+  return doc(db, 'likes', `${deviceId}_${songId}`)
+}
+
+async function setSongLike(
+  songId: string,
+  deviceId: string,
+  liked: boolean
+): Promise<void> {
+  const likeRef = getLikeRef(songId, deviceId)
   const songRef = doc(db, 'songs', songId)
-  const songSnap = await getDoc(songRef)
-  if (songSnap.exists()) {
-    const currentLikes = songSnap.data().likes || 0
-    await setDoc(songRef, { likes: currentLikes + 1 }, { merge: true })
-  }
+
+  await runTransaction(db, async (transaction) => {
+    const [likeSnap, songSnap] = await Promise.all([
+      transaction.get(likeRef),
+      transaction.get(songRef),
+    ])
+
+    if (likeSnap.exists() === liked || !songSnap.exists()) {
+      return
+    }
+
+    if (liked) {
+      transaction.set(likeRef, {
+        deviceId,
+        songId,
+        createdAt: new Date(),
+      })
+    } else {
+      transaction.delete(likeRef)
+    }
+
+    const rawLikes = songSnap.data().likes
+    const currentLikes =
+      typeof rawLikes === 'number' && Number.isFinite(rawLikes) ? rawLikes : 0
+    transaction.set(
+      songRef,
+      { likes: Math.max(0, currentLikes + (liked ? 1 : -1)) },
+      { merge: true }
+    )
+  })
+}
+
+// إعجاب بأغنية معينة من جهاز معين
+export async function likeSong(
+  songId: string,
+  deviceId: string
+): Promise<void> {
+  await setSongLike(songId, deviceId, true)
 }
 
 // إلغاء إعجاب بأغنية من جهاز معين
-export async function unlikeSong(songId: string, deviceId: string) {
-  const likeRef = doc(db, 'likes', `${deviceId}_${songId}`)
-  await deleteDoc(likeRef)
-  // تحديث العداد في الأغنية
-  const songRef = doc(db, 'songs', songId)
-  const songSnap = await getDoc(songRef)
-  if (songSnap.exists()) {
-    const currentLikes = songSnap.data().likes || 0
-    await setDoc(songRef, { likes: Math.max(0, currentLikes - 1) }, { merge: true })
-  }
+export async function unlikeSong(
+  songId: string,
+  deviceId: string
+): Promise<void> {
+  await setSongLike(songId, deviceId, false)
 }
 
 // التحقق مما إذا كان الجهاز قد أعجب بالأغنية
-export async function isSongLiked(songId: string, deviceId: string): Promise<boolean> {
-  const likeRef = doc(db, 'likes', `${deviceId}_${songId}`)
-  const likeSnap = await getDoc(likeRef)
+export async function isSongLiked(
+  songId: string,
+  deviceId: string
+): Promise<boolean> {
+  const likeSnap = await getDoc(getLikeRef(songId, deviceId))
   return likeSnap.exists()
 }
 

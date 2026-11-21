@@ -1,4 +1,5 @@
 'use client'
+import Image from 'next/image'
 import { useLanguage } from '@/app/context/LanguageContext'
 
 type SongCardProps = {
@@ -21,10 +22,13 @@ export default function SongCard({ song }: SongCardProps) {
   return (
     <div className="bg-tamarind rounded-xl overflow-hidden shadow-lg hover:shadow-xl transition group cursor-pointer">
       <div className="relative aspect-square overflow-hidden">
-        <img
+        <Image
           src={song.coverImageUrl}
           alt={title}
-          className="w-full h-full object-cover group-hover:scale-105 transition duration-500"
+          fill
+          unoptimized
+          sizes="(max-width: 768px) 100vw, 33vw"
+          className="object-cover group-hover:scale-105 transition duration-500"
         />
       </div>
       <div className="p-4 text-center">

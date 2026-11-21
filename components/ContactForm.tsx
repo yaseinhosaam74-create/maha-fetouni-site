@@ -30,7 +30,7 @@ export default function ContactForm() {
       setEmail('')
       setSubject('')
       setMessage('')
-    } catch (error) {
+    } catch {
       toast.error(language === 'ar' ? 'حدث خطأ أثناء الإرسال' : 'Error sending message')
     } finally {
       setLoading(false)

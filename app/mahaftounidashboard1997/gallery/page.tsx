@@ -1,5 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
+import type { Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
@@ -9,7 +11,21 @@ type Photo = {
   id: string
   imageUrl: string
   isPublished: boolean
-  createdAt?: any
+  createdAt?: Timestamp
+}
+
+type CloudinaryResult = {
+  event?: string
+  info?: { secure_url?: string }
+}
+
+type CloudinaryWidget = { open: () => void }
+
+type CloudinaryApi = {
+  createUploadWidget: (
+    options: Record<string, unknown>,
+    callback: (error: unknown, result: CloudinaryResult) => void
+  ) => CloudinaryWidget
 }
 
 export default function AdminGalleryPage() {
@@ -28,33 +44,38 @@ export default function AdminGalleryPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchPhotos()
-  }, [])
-
-  const fetchPhotos = async () => {
+  const fetchPhotos = useCallback(async () => {
     try {
       const snapshot = await getDocs(collection(db, 'photos'))
       const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Photo))
       setPhotos(list)
-    } catch (error) {
+    } catch {
       toast.error('تعذر جلب الصور')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchPhotos()
+  }, [fetchPhotos])
 
   const openUploadWidget = () => {
     if (!cloudName) {
       toast.error('Cloudinary غير مهيأ')
       return
     }
-    if (typeof window === 'undefined' || !(window as any).cloudinary) {
+    if (typeof window === 'undefined') {
+      toast.error('سكربت Cloudinary لم يتم تحميله بعد')
+      return
+    }
+    const cloudinaryWindow = window as Window & { cloudinary?: CloudinaryApi }
+    if (!cloudinaryWindow.cloudinary) {
       toast.error('سكربت Cloudinary لم يتم تحميله بعد')
       return
     }
 
-    const widget = (window as any).cloudinary.createUploadWidget(
+    const widget = cloudinaryWindow.cloudinary.createUploadWidget(
       {
         cloudName,
         uploadPreset: 'maha_fetouni_preset', // تأكد من وجود هذا الاسم في Cloudinary
@@ -65,12 +86,12 @@ export default function AdminGalleryPage() {
         clientAllowedFormats: ['jpg', 'jpeg', 'png', 'webp'],
         maxImageFileSize: 5000000,
       },
-      async (error: any, result: any) => {
+      async (error: unknown, result: CloudinaryResult) => {
         if (error) {
           toast.error('خطأ في الرفع: ' + JSON.stringify(error))
           return
         }
-        if (result && result.event === 'success') {
+        if (result && result.event === 'success' && result.info?.secure_url) {
           setUploading(true)
           try {
             await addDoc(collection(db, 'photos'), {
@@ -80,7 +101,7 @@ export default function AdminGalleryPage() {
             })
             toast.success('تمت إضافة الصورة')
             fetchPhotos()
-          } catch (err) {
+          } catch {
             toast.error('فشل حفظ الصورة في قاعدة البيانات')
           } finally {
             setUploading(false)
@@ -97,7 +118,7 @@ export default function AdminGalleryPage() {
         isPublished: !photo.isPublished,
       })
       fetchPhotos()
-    } catch (error) {
+    } catch {
       toast.error('تعذر التحديث')
     }
   }
@@ -108,7 +129,7 @@ export default function AdminGalleryPage() {
         await deleteDoc(doc(db, 'photos', id))
         toast.success('تم الحذف')
         fetchPhotos()
-      } catch (error) {
+      } catch {
         toast.error('تعذر الحذف')
       }
     }
@@ -136,9 +157,12 @@ export default function AdminGalleryPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {photos.map((photo) => (
             <div key={photo.id} className="relative group">
-              <img
+              <Image
                 src={photo.imageUrl}
-                alt="صورة"
+                alt="صورة من معرض مهى فتوني"
+                width={400}
+                height={400}
+                unoptimized
                 className={`w-full aspect-square object-cover rounded-lg ${!photo.isPublished ? 'opacity-40' : ''}`}
               />
               <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition">

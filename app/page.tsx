@@ -1,20 +1,32 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import FullScreenPlayer from '@/components/FullScreenPlayer'
+import { Play } from 'lucide-react'
+import { useAudio } from '@/components/AudioContext'
 import { useLanguage } from '@/app/context/LanguageContext'
 import { getSiteSettings } from '@/lib/firestore'
 
+type SiteSettings = {
+  siteNameAr?: string
+  siteNameEn?: string
+  heroSubtitleAr?: string
+  heroSubtitleEn?: string
+  heroSubtitle2Ar?: string
+  heroSubtitle2En?: string
+  heroSubtitle2?: string
+}
+
 export default function HomePage() {
   const { language } = useLanguage()
-  const [settings, setSettings] = useState<any>(null)
+  const { openFullscreenPlayer, currentSong } = useAudio()
+  const [settings, setSettings] = useState<SiteSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchSettings = async () => {
       try {
         const data = await getSiteSettings()
-        setSettings(data)
+        setSettings(data as SiteSettings | null)
       } catch (error) {
         console.error('Error fetching settings:', error)
       } finally {
@@ -49,13 +61,14 @@ export default function HomePage() {
         <p className="text-xl md:text-2xl text-boho mb-2">{heroSubtitle}</p>
         <p className="text-sm md:text-base text-boho/70 leading-relaxed">{heroSubtitle2}</p>
       </motion.div>
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ delay: 0.4, duration: 0.5 }}
+      <button
+        onClick={() => openFullscreenPlayer()}
+        className="flex items-center gap-3 bg-rubine hover:bg-tamarind text-white px-8 py-4 rounded-full text-lg font-bold shadow-2xl transition"
       >
-        <FullScreenPlayer />
-      </motion.div>
+        <Play size={22} fill="currentColor" />
+        {language === 'ar' ? 'فتح المشغّل' : 'Open player'}
+        {currentSong && <span className="text-white/70 text-sm">· {language === 'ar' ? currentSong.titleAr : currentSong.titleEn}</span>}
+      </button>
     </motion.main>
   )
 }

@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import type { Timestamp } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { collection, getDocs, deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
@@ -12,34 +13,34 @@ type Message = {
   subject?: string
   message: string
   read: boolean
-  createdAt?: any
+  createdAt?: Timestamp
 }
 
 export default function AdminMessagesPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    fetchMessages()
-  }, [])
-
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     try {
       const snapshot = await getDocs(collection(db, 'messages'))
       const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Message))
       // فرز يدوي تنازلي حسب createdAt
       list.sort((a, b) => {
-        const aTime = a.createdAt?.toMillis?.() || 0
-        const bTime = b.createdAt?.toMillis?.() || 0
+        const aTime = a.createdAt?.toMillis() || 0
+        const bTime = b.createdAt?.toMillis() || 0
         return bTime - aTime
       })
       setMessages(list)
-    } catch (error) {
+    } catch {
       toast.error('تعذر جلب الرسائل')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchMessages()
+  }, [fetchMessages])
 
   const handleDelete = async (id: string) => {
     if (confirm('حذف هذه الرسالة؟')) {
@@ -47,7 +48,7 @@ export default function AdminMessagesPage() {
         await deleteDoc(doc(db, 'messages', id))
         toast.success('تم الحذف')
         fetchMessages()
-      } catch (error) {
+      } catch {
         toast.error('تعذر الحذف')
       }
     }
@@ -57,7 +58,7 @@ export default function AdminMessagesPage() {
     try {
       await updateDoc(doc(db, 'messages', id), { read: true })
       fetchMessages()
-    } catch (error) {
+    } catch {
       toast.error('تعذر التحديث')
     }
   }

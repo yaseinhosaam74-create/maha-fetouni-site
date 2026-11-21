@@ -3,6 +3,11 @@ import { useState, useEffect } from 'react'
 import { getSiteSettings } from '@/lib/firestore'
 import { useLanguage } from '@/app/context/LanguageContext'
 
+type SiteSettings = {
+  aboutTextAr?: string
+  aboutTextEn?: string
+}
+
 export default function AboutPage() {
   const [aboutTextAr, setAboutTextAr] = useState('')
   const [aboutTextEn, setAboutTextEn] = useState('')
@@ -12,7 +17,7 @@ export default function AboutPage() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const settings = await getSiteSettings()
+        const settings = await getSiteSettings() as SiteSettings | null
         if (settings) {
           setAboutTextAr(settings.aboutTextAr || '')
           setAboutTextEn(settings.aboutTextEn || '')

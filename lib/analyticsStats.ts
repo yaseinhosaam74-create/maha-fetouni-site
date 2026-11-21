@@ -1,5 +1,23 @@
 import { db } from './firebase'
-import { collection, getDocs } from 'firebase/firestore'
+import { collection, getDocs, limit, query, type DocumentData } from 'firebase/firestore'
+import type { AnalyticsEventData } from './analytics'
+
+const ANALYTICS_EVENTS_LIMIT = 1000
+
+type AnalyticsEvent = AnalyticsEventData & {
+  type?: string
+  event?: string
+  page?: string
+}
+
+function toAnalyticsEvent(data: DocumentData): AnalyticsEvent {
+  return {
+    type: typeof data.type === 'string' ? data.type : typeof data.event === 'string' ? data.event : undefined,
+    path: typeof data.path === 'string' ? data.path : typeof data.page === 'string' ? data.page : undefined,
+    songId: typeof data.songId === 'string' ? data.songId : undefined,
+    photoId: typeof data.photoId === 'string' ? data.photoId : undefined,
+  }
+}
 
 export type AnalyticsSummary = {
   totalPageViews: number
@@ -14,8 +32,12 @@ export type AnalyticsSummary = {
 }
 
 export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
-  const eventsSnap = await getDocs(collection(db, 'analytics_events'))
-  const events = eventsSnap.docs.map((doc) => doc.data())
+  const eventsQuery = query(
+    collection(db, 'analytics_events'),
+    limit(ANALYTICS_EVENTS_LIMIT)
+  )
+  const eventsSnap = await getDocs(eventsQuery)
+  const events = eventsSnap.docs.map((doc) => toAnalyticsEvent(doc.data()))
 
   const summary: AnalyticsSummary = {
     totalPageViews: 0,
@@ -29,21 +51,21 @@ export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
     unreadMessages: 0,
   }
 
-  events.forEach((event: any) => {
+  events.forEach((event) => {
     switch (event.type) {
-      case 'page_view':
+      case 'page_view': {
         summary.totalPageViews++
         const path = event.path || 'unknown'
-        if (!summary.pageViewsByPath[path]) summary.pageViewsByPath[path] = 0
-        summary.pageViewsByPath[path]++
+        summary.pageViewsByPath[path] = (summary.pageViewsByPath[path] ?? 0) + 1
         break
-      case 'song_play':
+      }
+      case 'song_play': {
         summary.totalSongPlays++
         if (event.songId) {
-          if (!summary.songPlaysById[event.songId]) summary.songPlaysById[event.songId] = 0
-          summary.songPlaysById[event.songId]++
+          summary.songPlaysById[event.songId] = (summary.songPlaysById[event.songId] ?? 0) + 1
         }
         break
+      }
       case 'song_like':
         summary.totalSongLikes++
         break

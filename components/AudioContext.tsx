@@ -3,32 +3,11 @@ import React, { createContext, useContext, useState, useEffect, useRef, useCallb
 import { db } from '@/lib/firebase'
 import { collection, query, where, getDocs, doc, updateDoc, increment } from 'firebase/firestore'
 import { logAnalyticsEvent } from '@/lib/analytics'
+import type { Song } from '@/lib/firestore'
 
-export type Song = {
-  id: string
-  titleAr: string
-  titleEn: string
-  artistAr?: string
-  artistEn?: string
-  audioUrl: string
-  coverImageUrl: string
-  albumAr?: string
-  albumEn?: string
-  year?: number
-  composerAr?: string
-  composerEn?: string
-  lyricistAr?: string
-  lyricistEn?: string
-  arrangerAr?: string
-  arrangerEn?: string
-  lyricsAr?: string
-  lyricsEn?: string
-  syncedLyricsAr?: string
-  syncedLyricsEn?: string
-  isPublished: boolean
-  plays: number
-  likes: number
-}
+export type { Song } from '@/lib/firestore'
+
+export type RepeatMode = 'off' | 'all' | 'one'
 
 type AudioContextType = {
   currentSong: Song | null
@@ -38,6 +17,14 @@ type AudioContextType = {
   duration: number
   volume: number
   playlist: Song[]
+  isShuffled: boolean
+  repeatMode: RepeatMode
+  isFullscreenPlayerOpen: boolean
+  fullscreenSong: Song | null
+  openFullscreenPlayer: (song?: Song) => void
+  closeFullscreenPlayer: () => void
+  toggleShuffle: () => void
+  cycleRepeat: () => void
   playSong: (song: Song) => void
   playSongFromPlaylist: (songs: Song[], song: Song) => void
   togglePlay: () => void
@@ -59,11 +46,19 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [duration, setDuration] = useState(0)
   const [volume, setVolume] = useState(1)
   const [playlist, setPlaylist] = useState<Song[]>([])
+  const [isShuffled, setIsShuffled] = useState(false)
+  const [repeatMode, setRepeatMode] = useState<RepeatMode>('off')
+  const [isFullscreenPlayerOpen, setIsFullscreenPlayerOpen] = useState(false)
+  const [fullscreenSong, setFullscreenSong] = useState<Song | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const playPromiseRef = useRef<Promise<void> | null>(null)
+  const shuffleHistoryRef = useRef<string[]>([])
+  const currentSongIdRef = useRef<string | null>(null)
 
-  const nextRef = useRef<() => void>(() => {})
+  const nextRef = useRef<() => boolean>(() => false)
   const prevRef = useRef<() => void>(() => {})
+  const repeatModeRef = useRef<RepeatMode>(repeatMode)
+  const startPlaybackRef = useRef<() => void>(() => {})
 
   useEffect(() => {
     const fetchPlaylist = async () => {
@@ -79,7 +74,6 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
             audioRef.current.src = firstSong.audioUrl
             audioRef.current.load()
           }
-          setupMediaSession(firstSong)
         }
       } catch (error) {
         console.error('Error fetching initial playlist:', error)
@@ -96,9 +90,17 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
     const handleLoadedMetadata = () => setDuration(audio.duration)
     const handleEnded = () => {
-      setIsPlaying(false)
-      setCurrentTime(0)
-      nextRef.current()
+      if (repeatModeRef.current === 'one' && audioRef.current) {
+        audioRef.current.currentTime = 0
+        setCurrentTime(0)
+        startPlaybackRef.current()
+        return
+      }
+      const startedNext = nextRef.current()
+      if (!startedNext) {
+        setIsPlaying(false)
+        setCurrentTime(0)
+      }
     }
 
     audio.addEventListener('timeupdate', handleTimeUpdate)
@@ -127,7 +129,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (audioRef.current) audioRef.current.volume = volume
   }, [volume])
 
-  const cacheSongAudio = async (song: Song) => {
+  const cacheSongAudio = useCallback(async (song: Song) => {
     try {
       if ('caches' in window) {
         const cache = await caches.open('maha-ftouni-songs')
@@ -136,44 +138,47 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           await cache.put(song.audioUrl, response.clone())
         }
       }
-    } catch (error) {
-      // تجاهل الخطأ بصمت لمنع رسائل التيرمنال المزعجة (CORS Policy)
+    } catch {
+      return
     }
-  }
+  }, [])
 
-  const setupMediaSession = (song: Song) => {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: song.titleAr || song.titleEn,
-        artist: song.artistAr || 'مهى فتوني',
-        album: song.albumAr || 'أغنية',
-        artwork: [{ src: song.coverImageUrl, sizes: '512x512', type: 'image/jpeg' }],
-      })
-      navigator.mediaSession.setActionHandler('play', () => {
-        playSong(song)
-      })
-      navigator.mediaSession.setActionHandler('pause', () => {
-        audioRef.current?.pause()
+  const startPlayback = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+
+    if (playPromiseRef.current) {
+      playPromiseRef.current.catch(() => {})
+      playPromiseRef.current = null
+    }
+
+    playPromiseRef.current = audio.play()
+    playPromiseRef.current
+      .then(() => setIsPlaying(true))
+      .catch((error) => {
+        if (error.name !== 'AbortError') console.error('Play failed:', error)
         setIsPlaying(false)
       })
-      navigator.mediaSession.setActionHandler('previoustrack', () => {
-        prevRef.current()
-      })
-      navigator.mediaSession.setActionHandler('nexttrack', () => {
-        nextRef.current()
-      })
-      navigator.mediaSession.setActionHandler('seekto', (details) => {
-        if (details.seekTime != null && audioRef.current) {
-          audioRef.current.currentTime = details.seekTime
-          setCurrentTime(details.seekTime)
-        }
-      })
-    }
-  }
+      .finally(() => { playPromiseRef.current = null })
+  }, [])
+
+  useEffect(() => {
+    repeatModeRef.current = repeatMode
+  }, [repeatMode])
+
+  useEffect(() => {
+    startPlaybackRef.current = startPlayback
+  }, [startPlayback])
 
   const playSong = useCallback((song: Song) => {
     const audio = audioRef.current
     if (!audio) return
+
+    if (currentSongIdRef.current !== song.id) {
+      shuffleHistoryRef.current.push(song.id)
+      if (shuffleHistoryRef.current.length > 50) shuffleHistoryRef.current.shift()
+      currentSongIdRef.current = song.id
+    }
 
     if (playPromiseRef.current) {
       playPromiseRef.current.catch(() => {})
@@ -186,18 +191,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
     const onCanPlay = () => {
       audio.removeEventListener('canplay', onCanPlay)
-      playPromiseRef.current = audio.play()
-      playPromiseRef.current
-        .then(() => setIsPlaying(true))
-        .catch((error) => {
-          if (error.name !== 'AbortError') {
-            console.error('Play failed:', error)
-          }
-          setIsPlaying(false)
-        })
-        .finally(() => {
-          playPromiseRef.current = null
-        })
+      startPlayback()
     }
     audio.addEventListener('canplay', onCanPlay)
 
@@ -209,8 +203,64 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     logAnalyticsEvent('song_play', { songId: song.id, path: window.location.pathname })
 
     cacheSongAudio(song)
-    setupMediaSession(song)
-  }, [])
+  }, [cacheSongAudio, startPlayback])
+
+  const resumePlayback = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio || !currentSong) return
+    if (!audio.src) {
+      playSong(currentSong)
+      return
+    }
+    startPlayback()
+  }, [currentSong, playSong, startPlayback])
+
+  useEffect(() => {
+    if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined' || !currentSong) return
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: currentSong.titleAr || currentSong.titleEn,
+      artist: currentSong.artistAr || 'مهى فتوني',
+      album: currentSong.albumAr || 'أغنية',
+      artwork: [{ src: currentSong.coverImageUrl, sizes: '512x512', type: 'image/jpeg' }],
+    })
+
+    const handlePlay = () => { resumePlayback() }
+    const handlePause = () => {
+      audioRef.current?.pause()
+      setIsPlaying(false)
+    }
+    const handlePrevious = () => { prevRef.current() }
+    const handleNext = () => { nextRef.current() }
+    const handleSeek: MediaSessionActionHandler = (details) => {
+      if (details.seekTime != null && audioRef.current) {
+        audioRef.current.currentTime = details.seekTime
+        setCurrentTime(details.seekTime)
+      }
+    }
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+      try {
+        navigator.mediaSession.setActionHandler(action, handler)
+      } catch {
+        return
+      }
+    }
+
+    setHandler('play', handlePlay)
+    setHandler('pause', handlePause)
+    setHandler('previoustrack', handlePrevious)
+    setHandler('nexttrack', handleNext)
+    setHandler('seekto', handleSeek)
+
+    return () => {
+      navigator.mediaSession.metadata = null
+      setHandler('play', null)
+      setHandler('pause', null)
+      setHandler('previoustrack', null)
+      setHandler('nexttrack', null)
+      setHandler('seekto', null)
+    }
+  }, [currentSong, resumePlayback])
 
   const playSongFromPlaylist = (songs: Song[], song: Song) => {
     setPlaylist(songs)
@@ -226,27 +276,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       setIsPlaying(false)
     } else {
       if (!audio.src || audio.src !== currentSong?.audioUrl) {
-        if (currentSong) {
-          playSong(currentSong)
-          return
-        }
+        if (currentSong) { playSong(currentSong); return }
       }
-      if (playPromiseRef.current) {
-        playPromiseRef.current.catch(() => {})
-        playPromiseRef.current = null
-      }
-      playPromiseRef.current = audio.play()
-      playPromiseRef.current
-        .then(() => setIsPlaying(true))
-        .catch((error) => {
-          if (error.name !== 'AbortError') {
-            console.error('Toggle play failed:', error)
-          }
-          setIsPlaying(false)
-        })
-        .finally(() => {
-          playPromiseRef.current = null
-        })
+      startPlayback()
     }
   }
 
@@ -260,27 +292,66 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const next = useCallback(() => {
-    if (!currentSong || playlist.length === 0) return
-    const currentIndex = playlist.findIndex((s) => s.id === currentSong.id)
-    if (currentIndex > -1 && currentIndex < playlist.length - 1) {
-      playSong(playlist[currentIndex + 1])
+  const toggleShuffle = useCallback(() => {
+    setIsShuffled((shuffled) => {
+      shuffleHistoryRef.current = currentSong ? [currentSong.id] : []
+      return !shuffled
+    })
+  }, [currentSong])
+
+  const cycleRepeat = useCallback(() => {
+    setRepeatMode((mode) => mode === 'off' ? 'all' : mode === 'all' ? 'one' : 'off')
+  }, [])
+
+  const next = useCallback((): boolean => {
+    if (!currentSong || playlist.length === 0) return false
+    const loopAll = repeatMode !== 'off'
+
+    if (isShuffled) {
+      const playedIds = new Set(shuffleHistoryRef.current)
+      const candidates = playlist.filter((song) => song.id !== currentSong.id)
+      const remaining = playlist.filter((song) => !playedIds.has(song.id))
+      if (!loopAll && remaining.length === 0) return false
+      const pool = loopAll ? candidates : remaining
+      const choices = pool.length > 0 ? pool : candidates
+      if (choices.length === 0) choices.push(playlist[0])
+      playSong(choices[Math.floor(Math.random() * choices.length)])
+      return true
     }
-  }, [currentSong, playlist, playSong])
+
+    const currentIndex = playlist.findIndex((song) => song.id === currentSong.id)
+    if (!loopAll && currentIndex === playlist.length - 1) return false
+    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % playlist.length
+    playSong(playlist[nextIndex])
+    return true
+  }, [currentSong, playlist, playSong, isShuffled, repeatMode])
 
   const prev = useCallback(() => {
     if (!currentSong || playlist.length === 0) return
-    const currentIndex = playlist.findIndex((s) => s.id === currentSong.id)
+
+    if (isShuffled) {
+      const history = shuffleHistoryRef.current
+      const currentPosition = history.lastIndexOf(currentSong.id)
+      if (currentPosition > 0) {
+        const previousSong = playlist.find((song) => song.id === history[currentPosition - 1])
+        if (previousSong) {
+          playSong(previousSong)
+          return
+        }
+      }
+      const audio = audioRef.current
+      if (audio) { audio.currentTime = 0; setCurrentTime(0) }
+      return
+    }
+
+    const currentIndex = playlist.findIndex((song) => song.id === currentSong.id)
     if (currentIndex > 0) {
       playSong(playlist[currentIndex - 1])
     } else {
       const audio = audioRef.current
-      if (audio) {
-        audio.currentTime = 0
-        setCurrentTime(0)
-      }
+      if (audio) { audio.currentTime = 0; setCurrentTime(0) }
     }
-  }, [currentSong, playlist, playSong])
+  }, [currentSong, playlist, playSong, isShuffled])
 
   useEffect(() => {
     nextRef.current = next
@@ -289,10 +360,49 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
 
   const setVolumeValue = (vol: number) => setVolume(vol)
 
+  const selectSongForViewing = useCallback((song: Song) => {
+    const audio = audioRef.current
+    if (!audio) return
+    if (playPromiseRef.current) {
+      playPromiseRef.current.catch(() => {})
+      playPromiseRef.current = null
+    }
+    audio.pause()
+    audio.src = song.audioUrl
+    audio.load()
+    if (currentSongIdRef.current !== song.id) {
+      shuffleHistoryRef.current.push(song.id)
+      if (shuffleHistoryRef.current.length > 50) shuffleHistoryRef.current.shift()
+      currentSongIdRef.current = song.id
+    }
+    setCurrentSong(song)
+    setCurrentTime(0)
+    setDuration(0)
+    setIsPlaying(false)
+  }, [])
+
+  const openFullscreenPlayer = useCallback((song?: Song) => {
+    const target = song ?? currentSong
+    if (target && target.id !== currentSong?.id) selectSongForViewing(target)
+    setFullscreenSong(target)
+    setIsFullscreenPlayerOpen(true)
+  }, [currentSong, selectSongForViewing])
+
+  const closeFullscreenPlayer = useCallback(() => {
+    setIsFullscreenPlayerOpen(false)
+    setFullscreenSong(null)
+  }, [])
+
+  useEffect(() => {
+    if (!isFullscreenPlayerOpen) return
+    if (currentSong && fullscreenSong?.id !== currentSong.id) setFullscreenSong(currentSong)
+  }, [currentSong, fullscreenSong?.id, isFullscreenPlayerOpen])
+
   return (
     <AudioContext.Provider value={{
       currentSong, isPlaying, isMuted, currentTime, duration, volume, playlist,
-      playSong, playSongFromPlaylist, togglePlay, toggleMute, seek, next, prev, setVolume: setVolumeValue, setPlaylist,
+      isShuffled, repeatMode, isFullscreenPlayerOpen, fullscreenSong, openFullscreenPlayer, closeFullscreenPlayer,
+      toggleShuffle, cycleRepeat, playSong, playSongFromPlaylist, togglePlay, toggleMute, seek, next, prev, setVolume: setVolumeValue, setPlaylist,
     }}>
       {children}
     </AudioContext.Provider>

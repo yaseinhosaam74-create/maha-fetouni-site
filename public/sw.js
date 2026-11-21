@@ -1,4 +1,5 @@
 const CACHE_NAME = 'maha-ftouni-cache-v2'
+const AUDIO_CACHE_NAME = 'maha-ftouni-songs'
 const urlsToCache = [
   '/',
   '/manifest.json',
@@ -19,7 +20,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.filter((name) => name !== CACHE_NAME)
+        cacheNames.filter((name) => name !== CACHE_NAME && name !== AUDIO_CACHE_NAME)
           .map((name) => caches.delete(name))
       )
     }).then(() => self.clients.claim())

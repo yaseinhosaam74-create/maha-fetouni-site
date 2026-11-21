@@ -1,72 +1,93 @@
 // lib/lyrics.ts
-import { Lrc } from 'lrc-kit'
+import { Lrc, type Lyric } from 'lrc-kit'
 
 export interface LyricLine {
-  time: number      // الوقت بالثواني
-  content: string   // نص السطر
+  time: number
+  content: string
 }
 
 export interface ParsedLyrics {
   lines: LyricLine[]
-  isSynced: boolean   // true إذا كانت الكلمات بصيغة LRC حقيقية
-  offset: number      // إزاحة LRC بالثواني (إن وجدت)
+  isSynced: boolean
+  offset: number
 }
 
-/**
- * يتحقق إذا كان النص بصيغة LRC (يحتوي على توقيتات مثل [00:12.34])
- */
+export interface VisibleLyricLine extends LyricLine {
+  index: number
+  isActive: boolean
+}
+
+const TIMESTAMP_PATTERN = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g
+const OFFSET_PATTERN = /\[offset:\s*([+-]?\d+)\s*\]/i
+
 export function isLrcFormat(text: string): boolean {
   if (!text) return false
-  // نبحث عن نمط التوقيت [mm:ss.xx] أو [mm:ss]
-  const lrcPattern = /\[\d{1,2}:\d{1,2}(\.\d{1,3})?\]/
-  return lrcPattern.test(text)
+  return /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/.test(text)
 }
 
-/**
- * يحلل النص إلى أسطر كلمات مع توقيتات
- * - إذا كان LRC: يستخدم lrc-kit للتحليل الدقيق
- * - إذا كان نصًا عاديًا: يوزع الأسطر تقديريًا على المدة
- */
-export function parseLyrics(
-  text: string,
-  duration: number = 0
-): ParsedLyrics {
+function parseTimestamp(match: RegExpMatchArray): number {
+  const minutes = Number(match[1]) || 0
+  const seconds = Number(match[2]) || 0
+  const fraction = match[3] ? Number(`0.${match[3]}`) : 0
+  return minutes * 60 + seconds + fraction
+}
+
+function parseOffset(text: string): number {
+  const match = text.match(OFFSET_PATTERN)
+  if (!match) return 0
+  const value = Number(match[1])
+  return Number.isFinite(value) ? value / 1000 : 0
+}
+
+function parseLrcManually(text: string): LyricLine[] {
+  const lines: LyricLine[] = []
+  for (const rawLine of text.split(/\r\n|[\n\r]/)) {
+    const timestamps = rawLine.match(TIMESTAMP_PATTERN)
+    if (!timestamps || timestamps.length === 0) continue
+    const content = rawLine.replace(TIMESTAMP_PATTERN, '').trim()
+    if (!content) continue
+    for (const stamp of timestamps) {
+      const parsed = stamp.match(/\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/)
+      if (!parsed) continue
+      lines.push({ time: parseTimestamp(parsed), content })
+    }
+  }
+  return lines.sort((a, b) => a.time - b.time)
+}
+
+export function parseLyrics(text: string, duration: number = 0): ParsedLyrics {
   if (!text || text.trim() === '') {
     return { lines: [], isSynced: false, offset: 0 }
   }
 
-  // الحالة 1: النص بصيغة LRC
   if (isLrcFormat(text)) {
+    let lines: LyricLine[] = []
     try {
       const lrc = Lrc.parse(text)
-      const lines: LyricLine[] = lrc.lines.map((line) => ({
-        time: line.time,
-        content: line.content,
-      }))
-      // lrc-kit يخزن الـ offset في lrc.info.offset
-      const offset = (lrc.info as any)?.offset
-        ? parseFloat(String((lrc.info as any).offset)) / 1000
-        : 0
-      return { lines, isSynced: true, offset }
-    } catch (e) {
-      console.warn('Failed to parse LRC, falling back to plain text', e)
+      lines = lrc.lyrics
+        .map((line: Lyric) => ({ time: line.timestamp, content: line.content.trim() }))
+        .filter((line: LyricLine) => line.content.length > 0)
+        .sort((a: LyricLine, b: LyricLine) => a.time - b.time)
+    } catch {
+      lines = []
+    }
+    if (lines.length === 0) lines = parseLrcManually(text)
+    if (lines.length > 0) {
+      return { lines, isSynced: true, offset: parseOffset(text) }
     }
   }
 
-  // الحالة 2: نص عادي - نوزع الأسطر تقديريًا
   const rawLines = text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
+    .split(/\r\n|[\n\r]/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
 
   if (rawLines.length === 0) {
     return { lines: [], isSynced: false, offset: 0 }
   }
 
-  // إذا لم تكن المدة معروفة، نستخدم توزيعًا افتراضيًا (4 ثوانٍ لكل سطر)
   const effectiveDuration = duration > 0 ? duration : rawLines.length * 4
   const interval = effectiveDuration / rawLines.length
-
   const lines: LyricLine[] = rawLines.map((content, index) => ({
     time: index * interval,
     content,
@@ -75,35 +96,37 @@ export function parseLyrics(
   return { lines, isSynced: false, offset: 0 }
 }
 
-/**
- * يرجع مؤشر السطر النشط بناءً على الوقت الحالي
- * (آخر سطر وقتُه <= currentTime)
- */
-export function getActiveLineIndex(
-  lyrics: ParsedLyrics,
-  currentTime: number
-): number {
+export function getActiveLineIndex(lyrics: ParsedLyrics, currentTime: number): number {
   if (!lyrics.lines.length) return -1
   const adjustedTime = currentTime - lyrics.offset
 
   let activeIndex = -1
   for (let i = 0; i < lyrics.lines.length; i++) {
-    if (lyrics.lines[i].time <= adjustedTime) {
-      activeIndex = i
-    } else {
-      break
-    }
+    if (lyrics.lines[i].time <= adjustedTime) activeIndex = i
+    else break
   }
   return activeIndex
 }
 
-/**
- * يرجع السطر النشط كنص (أو null إذا لم يوجد)
- */
-export function getActiveLine(
-  lyrics: ParsedLyrics,
-  currentTime: number
-): LyricLine | null {
+export function getActiveLine(lyrics: ParsedLyrics, currentTime: number): LyricLine | null {
   const index = getActiveLineIndex(lyrics, currentTime)
   return index >= 0 ? lyrics.lines[index] : null
+}
+
+export function getVisibleLyrics(
+  lyrics: ParsedLyrics,
+  currentTime: number,
+  count: number = 4
+): VisibleLyricLine[] {
+  if (lyrics.lines.length === 0) return []
+  const activeIndex = getActiveLineIndex(lyrics, currentTime)
+  const safeCount = Math.max(1, Math.min(count, lyrics.lines.length))
+  const anchor = Math.max(0, activeIndex)
+  const start = Math.max(0, Math.min(anchor - 1, lyrics.lines.length - safeCount))
+  const end = Math.min(lyrics.lines.length, start + safeCount)
+
+  return lyrics.lines.slice(start, end).map((line, offset) => {
+    const index = start + offset
+    return { ...line, index, isActive: index === activeIndex }
+  })
 }

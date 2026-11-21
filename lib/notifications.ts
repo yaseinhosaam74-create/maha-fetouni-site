@@ -1,13 +1,16 @@
 import { db } from './firebase'
 import { collection, getDocs, query, where } from 'firebase/firestore'
 
-export async function checkNewSongs() {
+export async function checkNewSongs(): Promise<number> {
   try {
     const q = query(collection(db, 'songs'), where('isPublished', '==', true))
     const snapshot = await getDocs(q)
     const songs = snapshot.docs.map((doc) => doc.id)
     const stored = localStorage.getItem('knownSongs')
-    const knownSongs = stored ? JSON.parse(stored) : []
+    const parsed: unknown = stored ? JSON.parse(stored) : []
+    const knownSongs: string[] = Array.isArray(parsed)
+      ? parsed.filter((id): id is string => typeof id === 'string')
+      : []
 
     const newSongs = songs.filter((id) => !knownSongs.includes(id))
 

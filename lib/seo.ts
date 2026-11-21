@@ -1,12 +1,20 @@
 import { db } from './firebase'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 
+export type SeoPageSettings = {
+  titleAr: string
+  titleEn: string
+  descriptionAr: string
+  descriptionEn: string
+  keywords: string
+}
+
 export type SeoSettings = {
-  home: { titleAr: string; titleEn: string; descriptionAr: string; descriptionEn: string; keywords: string }
-  songs: { titleAr: string; titleEn: string; descriptionAr: string; descriptionEn: string; keywords: string }
-  gallery: { titleAr: string; titleEn: string; descriptionAr: string; descriptionEn: string; keywords: string }
-  about: { titleAr: string; titleEn: string; descriptionAr: string; descriptionEn: string; keywords: string }
-  contact: { titleAr: string; titleEn: string; descriptionAr: string; descriptionEn: string; keywords: string }
+  home: SeoPageSettings
+  songs: SeoPageSettings
+  gallery: SeoPageSettings
+  about: SeoPageSettings
+  contact: SeoPageSettings
 }
 
 export const defaultSeoSettings: SeoSettings = {
@@ -51,11 +59,18 @@ export async function getSeoSettings(): Promise<SeoSettings> {
   const docRef = doc(db, 'settings', 'seo')
   const docSnap = await getDoc(docRef)
   if (docSnap.exists()) {
-    return { ...defaultSeoSettings, ...docSnap.data() }
+    const stored = docSnap.data() as Partial<SeoSettings>
+    return {
+      home: { ...defaultSeoSettings.home, ...(stored.home ?? {}) },
+      songs: { ...defaultSeoSettings.songs, ...(stored.songs ?? {}) },
+      gallery: { ...defaultSeoSettings.gallery, ...(stored.gallery ?? {}) },
+      about: { ...defaultSeoSettings.about, ...(stored.about ?? {}) },
+      contact: { ...defaultSeoSettings.contact, ...(stored.contact ?? {}) },
+    }
   }
   return defaultSeoSettings
 }
 
-export async function saveSeoSettings(settings: SeoSettings) {
+export async function saveSeoSettings(settings: SeoSettings): Promise<void> {
   await setDoc(doc(db, 'settings', 'seo'), settings, { merge: true })
 }

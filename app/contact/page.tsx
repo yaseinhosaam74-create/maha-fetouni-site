@@ -11,15 +11,19 @@ type SocialLink = {
   color: string
 }
 
+type SiteSettings = {
+  socialLinks?: Record<string, SocialLink>
+}
+
 export default function ContactPage() {
   const [socialLinks, setSocialLinks] = useState<Record<string, SocialLink>>({})
   const [loading, setLoading] = useState(true)
-  const { language, t } = useLanguage()
+  const { t } = useLanguage()
 
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const settings = await getSiteSettings()
+        const settings = await getSiteSettings() as SiteSettings | null
         if (settings) {
           setSocialLinks(settings.socialLinks || {})
         }

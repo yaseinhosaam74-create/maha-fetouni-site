@@ -1,9 +1,24 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import Image from 'next/image'
 import { db } from '@/lib/firebase'
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore'
 import toast from 'react-hot-toast'
 import { Pencil, Trash2, Plus, X } from 'lucide-react'
+
+type CloudinaryResult = {
+  event?: string
+  info?: { secure_url?: string }
+}
+
+type CloudinaryWidget = { open: () => void }
+
+type CloudinaryApi = {
+  createUploadWidget: (
+    options: Record<string, unknown>,
+    callback: (error: unknown, result: CloudinaryResult) => void
+  ) => CloudinaryWidget
+}
 
 type Song = {
   id: string
@@ -70,21 +85,21 @@ export default function AdminSongsPage() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchSongs()
-  }, [])
-
-  const fetchSongs = async () => {
+  const fetchSongs = useCallback(async () => {
     try {
       const snapshot = await getDocs(collection(db, 'songs'))
       const songsList = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Song))
       setSongs(songsList)
-    } catch (error) {
+    } catch {
       toast.error('تعذر جلب الأغاني')
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    fetchSongs()
+  }, [fetchSongs])
 
   const resetForm = () => {
     setTitleAr('')
@@ -110,8 +125,10 @@ export default function AdminSongsPage() {
 
   const openUploadWidget = (type: 'audio' | 'image') => {
     if (!cloudName) return
-    if (typeof window === 'undefined' || !(window as any).cloudinary) return
-    const widget = (window as any).cloudinary.createUploadWidget(
+    if (typeof window === 'undefined') return
+    const cloudinaryWindow = window as Window & { cloudinary?: CloudinaryApi }
+    if (!cloudinaryWindow.cloudinary) return
+    const widget = cloudinaryWindow.cloudinary.createUploadWidget(
       {
         cloudName,
         uploadPreset: 'maha_fetouni_preset',
@@ -120,8 +137,8 @@ export default function AdminSongsPage() {
         resourceType: type === 'audio' ? 'video' : 'image',
         folder: type === 'audio' ? 'maha-fetouni/songs' : 'maha-fetouni/covers',
       },
-      (error: any, result: any) => {
-        if (!error && result && result.event === 'success') {
+      (error: unknown, result: CloudinaryResult) => {
+        if (!error && result && result.event === 'success' && result.info?.secure_url) {
           const url = result.info.secure_url
           if (type === 'audio') {
             setAudioUrl(url)
@@ -181,7 +198,7 @@ export default function AdminSongsPage() {
       resetForm()
       setShowForm(false)
       fetchSongs()
-    } catch (error) {
+    } catch {
       toast.error('حدث خطأ أثناء الحفظ')
     } finally {
       setSubmitting(false)
@@ -217,7 +234,7 @@ export default function AdminSongsPage() {
         await deleteDoc(doc(db, 'songs', id))
         toast.success('تم حذف الأغنية')
         fetchSongs()
-      } catch (error) {
+      } catch {
         toast.error('تعذر الحذف')
       }
     }
@@ -230,7 +247,7 @@ export default function AdminSongsPage() {
       })
       fetchSongs()
       toast.success('تم تحديث حالة النشر')
-    } catch (error) {
+    } catch {
       toast.error('تعذر التحديث')
     }
   }
@@ -357,7 +374,7 @@ export default function AdminSongsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {songs.map((song) => (
           <div key={song.id} className="bg-tamarind p-4 rounded-xl flex gap-4">
-            <img src={song.coverImageUrl} alt={song.titleAr} className="w-20 h-20 object-cover rounded" />
+            <Image src={song.coverImageUrl} alt={song.titleAr} width={80} height={80} unoptimized className="w-20 h-20 object-cover rounded" />
             <div className="flex-1">
               <h3 className="font-bold">{song.titleAr}</h3>
               <p className="text-sm text-boho">{song.titleEn}</p>

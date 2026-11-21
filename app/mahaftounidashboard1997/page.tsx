@@ -1,10 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { getAnalyticsSummary } from '@/lib/analyticsStats'
+import { getAnalyticsSummary, type AnalyticsSummary } from '@/lib/analyticsStats'
 import { BarChart3, Eye, Play, Heart, Image, Music, Mail, MessageSquare, TrendingUp } from 'lucide-react'
 
 export default function AdminDashboardPage() {
-  const [summary, setSummary] = useState<any>(null)
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -34,8 +34,8 @@ export default function AdminDashboardPage() {
     { label: 'رسائل غير مقروءة', value: summary.unreadMessages, icon: MessageSquare, color: 'bg-rubine' },
   ]
 
-  const topPages = Object.entries(summary.pageViewsByPath || {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 5)
-  const topPlayedSongs = Object.entries(summary.songPlaysById || {}).sort((a: any, b: any) => b[1] - a[1]).slice(0, 5)
+  const topPages = Object.entries(summary.pageViewsByPath || {}).sort((a: [string, number], b: [string, number]) => b[1] - a[1]).slice(0, 5)
+  const topPlayedSongs = Object.entries(summary.songPlaysById || {}).sort((a: [string, number], b: [string, number]) => b[1] - a[1]).slice(0, 5)
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -63,7 +63,7 @@ export default function AdminDashboardPage() {
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><TrendingUp size={20} /> الصفحات الأكثر زيارة</h2>
           {topPages.length === 0 ? <p className="text-boho">لا توجد بيانات</p> : (
             <ul className="space-y-2">
-              {topPages.map(([path, count]: any) => (
+              {topPages.map(([path, count]: [string, number]) => (
                 <li key={path} className="flex justify-between text-sm"><span>{path}</span><span className="font-bold">{count}</span></li>
               ))}
             </ul>
@@ -73,7 +73,7 @@ export default function AdminDashboardPage() {
           <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Play size={20} /> الأغاني الأكثر تشغيلاً</h2>
           {topPlayedSongs.length === 0 ? <p className="text-boho">لا توجد بيانات</p> : (
             <ul className="space-y-2">
-              {topPlayedSongs.map(([songId, count]: any) => (
+              {topPlayedSongs.map(([songId, count]: [string, number]) => (
                 <li key={songId} className="flex justify-between text-sm"><span>{songId.substring(0, 20)}...</span><span className="font-bold">{count}</span></li>
               ))}
             </ul>

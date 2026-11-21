@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true;
+    }
+
+    function isPublished() {
+      return resource.data.isPublished == true;
+    }
+
+    match /songs/{songId} {
+      allow read: if isPublished() || isAdmin();
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      allow update: if isAdmin() || (
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['plays', 'likes'])
+        && request.resource.data.plays is number
+        && request.resource.data.likes is number
+        && request.resource.data.plays >= 0
+        && request.resource.data.likes >= 0
+      );
+    }
+
+    match /photos/{photoId} {
+      allow read: if isPublished() || isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['name', 'email', 'subject', 'message', 'createdAt', 'read'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 200
+        && request.resource.data.message is string
+        && request.resource.data.message.size() <= 5000;
+    }
+
+    match /likes/{likeId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['deviceId', 'songId', 'createdAt'])
+        && request.resource.data.deviceId is string
+        && request.resource.data.deviceId.size() <= 100
+        && request.resource.data.songId is string
+        && request.resource.data.songId.size() <= 200;
+      allow delete: if true;
+    }
+
+    match /analytics_events/{eventId} {
+      allow read: if isAdmin();
+      allow create: if request.resource.data.keys().hasOnly(['type', 'event', 'path', 'page', 'songId', 'photoId', 'deviceId', 'createdAt', 'timestamp'])
+        && ((request.resource.data.type is string && request.resource.data.type.size() <= 100)
+          || (request.resource.data.event is string && request.resource.data.event.size() <= 100));
+      allow update, delete: if isAdmin();
+    }
+  }
+}

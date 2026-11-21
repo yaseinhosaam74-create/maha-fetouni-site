@@ -1,35 +1,22 @@
 # PROGRESS — 21 نوفمبر 2026
 
-## إيه اللي اتعمل النهاردة
-- أُصلح زر **متابعة / Continue** المقطوع في `components/ShareSheet.tsx` في الخطوة 1/4:
-  - قائمة الكلمات صارت داخل منطقة تمرير مستقلة مع `pb-[120px]` (السطر الأخير يظهر كاملًا فوق الزر).
-  - التذيبت صار ثابتًا في أسفل الشاشة: `fixed inset-x-0 bottom-0 z-50`، خلفية داكنة، `env(safe-area-inset-bottom)`، وزر أبيض كامل العرض بشكل pill ونص في المنتصف.
-  - نفس التذيبت الثابت انطبّق على الخطوات 2 و3 و4 (تم / مشاركة / رجوع + تحميل PNG + صف المشاركة).
-  - عرض الـ sheet صار عبر `createPortal(..., document.body)` لأن حركة `AutoScrollReveal` تضيف `transform` على `<main>` وتجعل `fixed` محسوبًا نسبيًا له؛ هذا كان يخلي التذيبت يطلع في نص الشاشة في الخطوات 2-4.
+## آخر تحديث (جلسة استكمال + إصلاحات Share/Scroll/OG)
+- **Lyrics Share:** حد الاختيار 5 سطور (`MAX_SHARE_LINES=5`)، بدون auto-select، بدون عداد خطوات 1/4. خلفية اختيار الكلمات وكارت المعاينة gradient من لون الغلاف (`getCoverPalette`) مش أسود.
+- **Edit Lyrics:** bottom sheet واحد فيه Tabs: Color / Text / Images + Done. Images بتعرض 5 صور متغيرة من gallery + صورة الغلاف الثابتة.
+- **Share system:** custom ShareSheet داخل الموقع (WhatsApp/Instagram/TikTok/Snapchat/Facebook/Telegram/X/SMS/Copy Link/Download). مفيش native Windows share كمسار رئيسي؛ تطبيقات الصور بتنزل PNG الكارت مع تعليمات. Copy Link ينسخ رابط الأغنية.
+- **Scroll lock fix:** تنظيف `body/html overflow` على close/unmount/Esc في ShareSheet وFullScreenPlayer، وfullscreenchange بيقفل الحالة بشكل نظيف.
+- **OG/SEO:** OG/Twitter في `app/layout.tsx`؛ metadata ديناميكية للأغنية في `app/songs/[id]/layout.tsx` (og:title/description/image/url, twitter:card).
+- **فحوصات:** `npx tsc --noEmit` ✅، `npm run lint` ✅، `npm run build` ✅ (نجح بعد `rm -rf .next` بسبب خطأ `_not-found` invariant مؤقت).
+- **Git/security:** `.env` و`.env.local` متجاهلين بـ `.gitignore` ومش staged؛ `git log --all -- .env .env.local` فاضي. لا يوجد commit/push في هذه الخطوة.
 
-## التحقق اللي اتنفّذ
-- `npx tsc --noEmit` ✅
-- `npm run lint` ✅
-- `npm run build` ✅ (17 صفحة، بدون أخطاء)
-- ملاحظة بيئية: `next/font` بيحتاج `NEXT_FONT_GOOGLE_MOCKED_RESPONSES=/tmp/opencode/fonts-mock.js` هنا لأن طلب Google Fonts بيتأخر في البيئة دي الملف ده في `/tmp` و**هيختفي بعد الشtdown**؛ لو `build` فشل بكرة بسبب Cairo، أعد إنشائه من CSS الخاص بـ Google Fonts أو اضبط الشبكة.
-- لقطات فعلية بـ Playwright على `390x390` و`390x844` و`1440x900`: تحليل البيكسلات أكد وجود شريط الزر الأبيض كاملًا في آخر الشاشة مع بكسلات النص الداكنة داخله، وأسفل الصورة ليس أبيض (مفيش قص). بعد التمرير لآخر الكلمات: آخر سطر عند `bottom=150` والتذيبت يبدأ من `top=313` والزر من `326 إلى 374`، والضغط على «متابعة» نجح. مفيش `pageerror`.
+## اللي اتعمل سابقًا
+- أُصلح زر **متابعة / Continue** المقطوع في `components/ShareSheet.tsx` (الخطوة 1/4): تمرير مستقل، تذييل ثابت، portal لـ body.
+- Commits سابقة: `b5d4bc3`, `5a754d7`, `8ed55d4`.
 
-## Git
-- الـ commit: `5a754d7 Fix clipped share sheet footer actions on mobile`.
-- اتعمل `git add components/ShareSheet.tsx` فقط؛ بقية التعديلات/الملفات غير المتتبعة في الـ working tree (بما فيها `REVIEW_BUGS.md` وملفات الـ share التانية) **اتخلفت زي ما هي** ومتعملهاش commit.
-- `PROGRESS.md` نفسه اتكتب بعد الـ commit حسب ترتيب الطلب، فهي ملف غير متتبع (untracked) لسه.
-
-## انت وقفت فين بالظبط
-- بعد الـ commit مباشرة، وقبل كتابة هذا الملف. المكوّن `ShareSheet.tsx` كامل ومُثبّت بصريًا؛ **لم أبدأ أي تعديل منطقي في الخطوة 3 أو 4**.
-- الخطوة 3 حاليًا: تبويبات `song / lyrics` + «تعديل الكلمات» في منطقة التمرير، وزر «مشاركة» في التذيبت.
-- الخطوة 4 حاليًا: «رجوع» + «تحميل PNG» + صف المشاركة (نسخ الرابط، WhatsApp، القصص، SMS، حالة واتساب) كلها في التذيبت الثابت.
-
-## اللي فاضل بكرة في خطوة الشير 3/4
-1. تأكيد المتطلب المحدد المتبقي لخطوتي 3/4 مع المستخدم (مفيش task مكتوب يحدد تغييرًا إضافيًا غير تثبيت الأزرار اللي اتخلص).
-2. اختبار slim للخطوة 3: تبديل `song/lyrics`، «تعديل الكلمات» (`startEditing`)، وتمكين زر المشاركة بعد جاهزية الـ preview.
-3. اختبار فعلي للخطوة 4 على جهاز/Cloudinary حقيقي: تنزيل PNG، نسخ الرابط، واجهة `navigator.share` للقصص/الحالة، وSMS/WhatsApp.
-4. مراجعة `REVIEW_BUGS.md`: المتبقي من خطوة التحسينات هو الأخطاء **3، 6، 10، 14، 15، 16، 17** (التي اتنفذت في 3/4: 4، 7، 12). لازم نتحقق إن ملاحظات الملف القديمة اللي بتشير لـ `FullScreenLyrics.tsx` انعكست على `ShareSheet.tsx` الحالي.
-5. لو احتجنا build تاني بعد reboot، نراعي خطورة الـ font mock المذكور فوق.
+## اللي فاضل بعد الاختبار
+1. اختبار يدوي على المتصفح: Lyrics Share (5 lines, no counter, gradient), Edit sheet, custom share targets, scroll unlock بعد close/fullscreen exit.
+2. مراجعة `REVIEW_BUGS.md` المتبقي: 3،6،10،14،15،16،17.
+3. بعد موافقة المستخدم: commit انتقائي/معتمد، ثم push عند طلبه.
 
 ## حالة الجهاز
-- حالة الإيقاف: `sudo shutdown -h now` فشل هنا لأن `sudo` يطلب كلمة مرور تفاعلية (`a terminal is required to authenticate`)، وكذلك `sudo -n` و`systemctl poweroff` رفضوا بدون مصادقة. الجهاز **ما زال شغالًا**، ولا يوجد shutdown مجدول. المطلوب منك تنفيذ الأمر من طرفية تفاعلية؛ لا sleep ولا hibernate.
+- **ولا shutdown ولا sleep ولا hibernate.** dev server ممكن يكون شغال حسب الجلسة؛ لا تقفله إلا بطلب صريح.

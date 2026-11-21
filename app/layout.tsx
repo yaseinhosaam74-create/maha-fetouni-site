@@ -1,20 +1,7 @@
-'use client'
+import type { Metadata, Viewport } from 'next'
 import { Cairo } from 'next/font/google'
 import './globals.css'
-import { AudioProvider } from '@/components/AudioContext'
-import DynamicBackground from '@/components/DynamicBackground'
-import Header from '@/components/Header'
-import Footer from '@/components/Footer'
-import ServiceWorkerRegister from '@/components/ServiceWorkerRegister'
-import CursorEffect from '@/components/CursorEffect'
-import ForgetMessage from '@/components/ForgetMessage'
-import AutoScrollReveal from '@/components/AutoScrollReveal'
-import SEOManager from '@/components/SEOManager'
-import AnalyticsTracker from '@/components/AnalyticsTracker'
-import { Toaster } from 'react-hot-toast'
-import { LanguageProvider } from '@/app/context/LanguageContext'
-import { ThemeProvider } from '@/components/ThemeContext'
-import { usePathname } from 'next/navigation'
+import AppShell from '@/components/AppShell'
 
 const cairo = Cairo({
   subsets: ['arabic'],
@@ -22,34 +9,45 @@ const cairo = Cairo({
   variable: '--font-cairo',
 })
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
-  const isAdminRoute = pathname.startsWith('/mahaftounidashboard1997')
-  const isPhotoViewer = pathname.startsWith('/gallery/photo')
-  const isFullscreen = isPhotoViewer
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://maha-ftouni.com'
 
+export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: 'مهى فتوني | الموقع الرسمي',
+    template: '%s | مهى فتوني',
+  },
+  description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني - أغاني، صور، كلمات',
+  applicationName: 'مهى فتوني',
+  keywords: ['مهى فتوني', 'Maha Ftouni', 'اغاني', 'لبنان'],
+  openGraph: {
+    type: 'website',
+    locale: 'ar_AR',
+    url: siteUrl,
+    siteName: 'مهى فتوني',
+    title: 'مهى فتوني | الموقع الرسمي',
+    description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'مهى فتوني | الموقع الرسمي',
+    description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني',
+  },
+  robots: { index: true, follow: true },
+  icons: { icon: '/favicon.ico' },
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  themeColor: '#280B0F',
+}
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={cairo.variable} suppressHydrationWarning>
-      <body className="font-arabic bg-italian-roast text-camel-coat min-h-screen flex flex-col" suppressHydrationWarning>
-        <ThemeProvider>
-          <LanguageProvider>
-            <AudioProvider>
-              {!isAdminRoute && !isFullscreen && <DynamicBackground />}
-              {!isAdminRoute && !isFullscreen && <Header />}
-              <main className={`flex-1 ${!isAdminRoute && !isFullscreen ? 'pb-28' : ''} page-enter`}>
-                {children}
-              </main>
-              {!isAdminRoute && !isFullscreen && <Footer />}
-              <Toaster position="bottom-center" />
-              <ServiceWorkerRegister />
-              {!isAdminRoute && !isFullscreen && <CursorEffect />}
-              {!isAdminRoute && !isFullscreen && <ForgetMessage />}
-              {!isAdminRoute && !isFullscreen && <AutoScrollReveal />}
-              {!isAdminRoute && !isFullscreen && <SEOManager />}
-              {!isAdminRoute && !isFullscreen && <AnalyticsTracker />}
-            </AudioProvider>
-          </LanguageProvider>
-        </ThemeProvider>
+    <html lang="ar" dir="rtl" className={cairo.variable}>
+      <body className="font-arabic bg-italian-roast text-camel-coat min-h-screen flex flex-col">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   )

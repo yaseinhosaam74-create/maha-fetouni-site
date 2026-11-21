@@ -74,7 +74,7 @@ export default function AdminSettingsPage() {
             })
           }
         }
-      } catch (error) {
+      } catch {
         toast.error('تعذر جلب الإعدادات')
       } finally {
         setLoading(false)
@@ -116,7 +116,7 @@ export default function AdminSettingsPage() {
         updatedAt: new Date(),
       }, { merge: true })
       toast.success('تم حفظ الإعدادات')
-    } catch (error) {
+    } catch {
       toast.error('تعذر الحفظ')
     } finally {
       setSubmitting(false)
@@ -185,11 +185,11 @@ export default function AdminSettingsPage() {
           </div>
           <div>
             <label className="block mb-1">حقوق النشر عربي</label>
-            <input type="text" value={copyrightAr} onChange={(e) => setCopyrightAr(e.target.value)} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none" placeholder="© 2024 مهى فتوني - جميع الحقوق محفوظة" />
+            <input type="text" value={copyrightAr} onChange={(e) => setCopyrightAr(e.target.value)} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none" placeholder="© 2026 مهى فتوني - جميع الحقوق محفوظة" />
           </div>
           <div>
             <label className="block mb-1">حقوق النشر إنجليزي</label>
-            <input type="text" value={copyrightEn} onChange={(e) => setCopyrightEn(e.target.value)} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none" placeholder="© 2024 Maha Ftouni - All rights reserved" />
+            <input type="text" value={copyrightEn} onChange={(e) => setCopyrightEn(e.target.value)} className="w-full p-3 rounded bg-italian-roast border border-boho focus:outline-none" placeholder="© 2026 Maha Ftouni - All rights reserved" />
           </div>
         </div>
 
