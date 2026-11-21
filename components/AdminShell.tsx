@@ -4,9 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 import { Music, Camera, Mail, Settings, LogOut, Sun, Moon, Languages, Eye, EyeOff, BarChart3, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { auth } from '@/lib/firebase'
+import { auth, db } from '@/lib/firebase'
 import { useTheme } from '@/components/ThemeContext'
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
@@ -30,13 +31,31 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       }
       try {
         const token = await currentUser.getIdTokenResult(true)
-        if (token.claims.admin === true) {
+        const emailLower = (currentUser.email || '').trim().toLowerCase()
+        let isAdmin = token.claims.admin === true
+
+        if (!isAdmin) {
+          const [uidDoc, emailDoc] = await Promise.all([
+            getDoc(doc(db, 'admins', currentUser.uid)),
+            emailLower ? getDoc(doc(db, 'admins', emailLower)) : Promise.resolve(null),
+          ])
+          const uidData = uidDoc.exists() ? uidDoc.data() : null
+          const emailData = emailDoc && emailDoc.exists() ? emailDoc.data() : null
+          isAdmin = uidData?.role === 'admin' || uidData?.admin === true || emailData?.role === 'admin' || emailData?.admin === true
+          console.info('[AdminAuth]', { uid: currentUser.uid, email: emailLower, claimAdmin: token.claims.admin === true, uidRole: uidData?.role, emailRole: emailData?.role })
+        } else {
+          console.info('[AdminAuth]', { uid: currentUser.uid, email: emailLower, claimAdmin: true })
+        }
+
+        if (isAdmin) {
           setUser(currentUser)
         } else {
+          console.warn('[AdminAuth] access denied', { uid: currentUser.uid, email: emailLower })
           setUser(null)
           await signOut(auth)
         }
-      } catch {
+      } catch (err) {
+        console.error('[AdminAuth] check failed', err)
         setUser(null)
       } finally {
         setLoading(false)
@@ -49,16 +68,37 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
     e.preventDefault()
     setLoginLoading(true)
     try {
-      const credential = await signInWithEmailAndPassword(auth, email, password)
+      const credential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
       const token = await credential.user.getIdTokenResult(true)
-      if (token.claims.admin !== true) {
+      const emailLower = (credential.user.email || '').trim().toLowerCase()
+      let isAdmin = token.claims.admin === true
+      let uidRole: unknown
+      let emailRole: unknown
+
+      if (!isAdmin) {
+        const [uidDoc, emailDoc] = await Promise.all([
+          getDoc(doc(db, 'admins', credential.user.uid)),
+          emailLower ? getDoc(doc(db, 'admins', emailLower)) : Promise.resolve(null),
+        ])
+        const uidData = uidDoc.exists() ? uidDoc.data() : null
+        const emailData = emailDoc && emailDoc.exists() ? emailDoc.data() : null
+        uidRole = uidData?.role ?? uidData?.admin
+        emailRole = emailData?.role ?? emailData?.admin
+        isAdmin = uidData?.role === 'admin' || uidData?.admin === true || emailData?.role === 'admin' || emailData?.admin === true
+      }
+
+      console.info('[AdminAuth] login', { uid: credential.user.uid, email: emailLower, claimAdmin: token.claims.admin === true, uidRole, emailRole, isAdmin })
+
+      if (!isAdmin) {
         await signOut(auth)
-        toast.error(lang === 'ar' ? 'ليس لديك صلاحية دخول' : 'You do not have access')
+        toast.error(lang === 'ar' ? `ليس لديك صلاحية دخول (${emailLower || 'no-email'})` : `No admin access (${emailLower || 'no-email'})`)
         return
       }
       toast.success(lang === 'ar' ? 'مرحباً بك' : 'Welcome')
-    } catch {
-      toast.error(lang === 'ar' ? 'بيانات غير صحيحة' : 'Invalid credentials')
+    } catch (err) {
+      console.error('[AdminAuth] login failed', err)
+      const msg = err instanceof Error ? err.message : 'Invalid credentials'
+      toast.error(lang === 'ar' ? `فشل الدخول: ${msg}` : `Login failed: ${msg}`)
     } finally {
       setLoginLoading(false)
     }

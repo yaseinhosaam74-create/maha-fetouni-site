@@ -9,6 +9,8 @@
   --font-arabic: var(--font-cairo), sans-serif;
 }
 
+html, body { overflow-x: hidden; max-width: 100vw; }
+
 body.dark {
   --color-camel-coat: #c6b39a;
   --color-boho: #7b694e;

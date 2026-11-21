@@ -1,6 +1,7 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
+import { usePathname } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -15,6 +16,7 @@ import { likeSong, unlikeSong, isSongLiked } from '@/lib/firestore'
 import { useDeviceId } from '@/lib/useLocalStorage'
 import SongShareButton from './SongShareButton'
 import ShareSheet from './ShareSheet'
+import { forceUnlockBodyScroll, lockBodyScroll, unlockBodyScroll } from '@/lib/bodyScrollLock'
 
 export default function FullScreenPlayer() {
   const {
@@ -27,6 +29,8 @@ export default function FullScreenPlayer() {
 
   const displaySong = fullscreenSong ?? currentSong
   const displaySongId = displaySong?.id
+  const pathname = usePathname()
+  const pathnameRef = useRef(pathname)
   const { lyrics, isLoading } = useSongLyrics(displaySong, language, duration)
 
   const [liked, setLiked] = useState(false)
@@ -40,8 +44,6 @@ export default function FullScreenPlayer() {
   const isProgrammaticScrollRef = useRef(false)
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const programmaticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const bodyOverflowRef = useRef('')
-  const htmlOverflowRef = useRef('')
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const restorePageRef = useRef<() => void>(() => {})
 
@@ -119,24 +121,20 @@ export default function FullScreenPlayer() {
     }
   }, [closeFullscreenPlayer])
 
+  useEffect(() => { pathnameRef.current = pathname }, [pathname])
+
   useEffect(() => {
-    bodyOverflowRef.current = document.body.style.overflow
-    htmlOverflowRef.current = document.documentElement.style.overflow
+    lockBodyScroll()
     previousFocusRef.current = document.activeElement as HTMLElement | null
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
     playerRef.current?.focus()
 
-    const restorePage = () => {
-      document.body.style.overflow = bodyOverflowRef.current
-      document.documentElement.style.overflow = htmlOverflowRef.current
-      document.documentElement.style.pointerEvents = ''
+    restorePageRef.current = () => {
+      forceUnlockBodyScroll()
       const target = previousFocusRef.current
       if (target?.isConnected) target.focus()
-      else document.body.focus()
     }
-    restorePageRef.current = restorePage
 
+    const handleRouteUnlock = () => forceUnlockBodyScroll()
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (document.querySelector('[data-share-menu="true"]')) return
@@ -153,23 +151,25 @@ export default function FullScreenPlayer() {
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
       const active = document.activeElement
-      if (!playerRef.current?.contains(active)) {
-        event.preventDefault()
-        first.focus()
-      } else if (event.shiftKey && active === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      if (!playerRef.current?.contains(active)) { event.preventDefault(); first.focus() }
+      else if (event.shiftKey && active === first) { event.preventDefault(); last.focus() }
+      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus() }
     }
     window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('popstate', handleRouteUnlock)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      restorePage()
+      window.removeEventListener('popstate', handleRouteUnlock)
+      unlockBodyScroll()
     }
   }, [closePlayer])
+
+  useEffect(() => {
+    if (pathnameRef.current !== pathname) {
+      forceUnlockBodyScroll()
+      closeFullscreenPlayer()
+    }
+  }, [pathname, closeFullscreenPlayer])
 
   useEffect(() => () => {
     if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)

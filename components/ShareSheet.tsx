@@ -2,654 +2,215 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
 import { createPortal } from 'react-dom'
-import {
-  X, Loader2, Download, MessageCircle, Link2,
-  Pencil, Send, Images, ArrowLeft,
-} from 'lucide-react'
+import { usePathname } from 'next/navigation'
+import { Check, Copy, MessageCircle, MoreHorizontal, Send, X } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useLanguage } from '@/app/context/LanguageContext'
-import { getCoverPalette, type CoverPalette } from '@/lib/coverColors'
-import { getPublishedPhotos, type Song } from '@/lib/firestore'
-import {
-  SHARE_WATERMARK,
-  DEFAULT_SHARE_OPTIONS,
-  buildShareCaption,
-  buildSongShareCaption,
-  drawShareCard,
-  getPublicSiteOrigin,
-  getPublicSongUrl,
-  renderShareCard,
-  type CardAlign,
-  type CardBackground,
-  type CardStyle,
-  type FontSize,
-  type ShareCardData,
-  type ShareCardMode,
-  type ShareCardOptions,
-} from '@/lib/shareCard'
+import { forceUnlockBodyScroll, lockBodyScroll, unlockBodyScroll } from '@/lib/bodyScrollLock'
+import { drawShareCard, renderShareCard, SHARE_WATERMARK, DEFAULT_SHARE_OPTIONS, getPublicSiteOrigin, getPublicSongUrl, type ShareCardData } from '@/lib/shareCard'
+import type { Song } from '@/lib/firestore'
 
-const FALLBACK_PALETTE: CoverPalette = {
-  dominant: '#7B2D2D',
-  palette: ['#7B2D2D', '#C6B39A', '#280B0F'],
-}
-
-const STYLES: CardStyle[] = ['classic', 'wide', 'narrow', 'slanted']
-const ALIGNS: CardAlign[] = ['right', 'center', 'left']
-const FONT_SIZES: FontSize[] = ['S', 'M', 'L']
 type Step = 1 | 2 | 3 | 4
-
 interface ShareSheetProps {
   currentSong: Song
   lines?: string[]
   language: 'ar' | 'en'
-  initialMode?: ShareCardMode
+  initialMode?: 'song' | 'lyrics'
   initialStep?: Step
   onClose: () => void
 }
 
-// Section removed (old step 2 UI)
-
-function Choice({
-  active,
-  onClick,
-  children,
-  title,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-  title?: string
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      aria-pressed={active}
-      className={`px-3 py-2 rounded-xl text-xs font-bold border transition ${
-        active
-          ? 'bg-white text-black border-white'
-          : 'bg-white/10 text-white/70 border-white/15 hover:bg-white/15'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
-
-export default function ShareSheet({
-  currentSong,
-  lines,
-  language,
-  initialMode = 'lyrics',
-  initialStep = 1,
-  onClose,
-}: ShareSheetProps) {
+export default function ShareSheet({ currentSong, lines, language, initialMode = 'song', onClose }: ShareSheetProps) {
   const { t } = useLanguage()
-  const [step, setStep] = useState<Step>(initialStep)
-  const [mode, setMode] = useState<ShareCardMode>(initialMode)
-  const [style, setStyle] = useState<CardStyle>(DEFAULT_SHARE_OPTIONS.style)
-  const [background, setBackground] = useState<CardBackground>('gradient')
-  const [backgroundUrl, setBackgroundUrl] = useState(currentSong.coverImageUrl)
-  const [artistImages, setArtistImages] = useState<string[]>([currentSong.coverImageUrl, currentSong.coverImageUrl])
-  const [align, setAlign] = useState<CardAlign>(DEFAULT_SHARE_OPTIONS.align)
-  const [fontSize, setFontSize] = useState<FontSize>(DEFAULT_SHARE_OPTIONS.fontSize)
-  const [lyricsColor, setLyricsColor] = useState(DEFAULT_SHARE_OPTIONS.lyricsColor)
-  const showWatermark = DEFAULT_SHARE_OPTIONS.showWatermark
-  const sticker = DEFAULT_SHARE_OPTIONS.sticker
-  const [palette, setPalette] = useState<CoverPalette>(FALLBACK_PALETTE)
-  const MAX_SHARE_LINES = 5
-  const [selectedLines, setSelectedLines] = useState<number[]>([])
-  const [isEditing, setIsEditing] = useState(false)
-  const [editedText, setEditedText] = useState('')
-  const [busyAction, setBusyAction] = useState('')
-  const [editOpen, setEditOpen] = useState(false)
-  const [editTab, setEditTab] = useState<'color' | 'text' | 'images'>('color')
-  const [, setGalleryImages] = useState<string[]>([])
-  const [isMounted, setIsMounted] = useState(false)
-  const [isPreviewReady, setIsPreviewReady] = useState(false)
-  const previewRef = useRef<HTMLCanvasElement>(null)
-  const sheetRef = useRef<HTMLDivElement>(null)
-  const closeRef = useRef<HTMLButtonElement>(null)
+  const pathname = usePathname()
+  const pathnameRef = useRef(pathname)
   const onCloseRef = useRef(onClose)
-  const bodyOverflowRef = useRef('')
-  const htmlOverflowRef = useRef('')
-  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const [mounted, setMounted] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState('')
+  const cardRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => { onCloseRef.current = onClose }, [onClose])
-  useEffect(() => { setIsMounted(true) }, [])
+  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => { pathnameRef.current = pathname }, [pathname])
 
-  const lyricSource = useMemo(() => {
-    if (lines && lines.length > 0) return lines
-    const stored = language === 'ar'
-      ? currentSong.lyricsAr || currentSong.lyricsEn
-      : currentSong.lyricsEn || currentSong.lyricsAr
-    return stored ? stored.split(/\r\n|[\n\r]/) : []
-  }, [lines, language, currentSong.lyricsAr, currentSong.lyricsEn])
+  const isSiteShare = !currentSong.id
+  const title = language === 'ar' ? (currentSong.titleAr || currentSong.titleEn) : (currentSong.titleEn || currentSong.titleAr)
+  const artist = language === 'ar' ? (currentSong.artistAr || currentSong.artistEn || 'مهى فتوني') : (currentSong.artistEn || currentSong.artistAr || 'Maha Ftouni')
+  const siteOrigin = useMemo(() => (typeof window !== 'undefined' ? window.location.origin : getPublicSiteOrigin()), [])
+  const shareUrl = useMemo(() => isSiteShare ? siteOrigin : (currentSong.id ? getPublicSongUrl(currentSong.id) : siteOrigin), [isSiteShare, siteOrigin, currentSong.id])
+  const shareText = isSiteShare
+    ? (language === 'ar' ? 'الموقع الرسمي للمطربة اللبنانية مهى فتوني' : 'Official website of Lebanese singer Maha Ftouni')
+    : `${title} - ${artist}`
+  const shareTitle = isSiteShare ? (language === 'ar' ? 'مهى فتوني | الموقع الرسمي' : 'Maha Ftouni | Official Website') : `${title} - ${artist}`
+  const cover = currentSong.coverImageUrl || '/icon-512x512.png'
 
-  const uniqueLines = useMemo(
-    () => Array.from(new Set(lyricSource.map((line) => line.trim()).filter(Boolean))),
-    [lyricSource]
-  )
-
-  useEffect(() => {
-    setSelectedLines([])
-    setBackgroundUrl(currentSong.coverImageUrl)
-    setEditedText('')
-    setIsEditing(false)
-    setStep(initialStep)
-    setMode(initialMode)
-  }, [currentSong.id, currentSong.coverImageUrl, initialMode, initialStep])
-
-  useEffect(() => {
-    let cancelled = false
-    void getCoverPalette(currentSong.coverImageUrl).then((value) => {
-      if (!cancelled) setPalette(value)
-    })
-    return () => { cancelled = true }
-  }, [currentSong.coverImageUrl])
+  const cardData: ShareCardData = useMemo(() => ({
+    title,
+    artist,
+    coverUrl: cover,
+    backgroundUrl: cover,
+    lines: (lines || []).slice(0, 5),
+    palette: { dominant: '#7B2D2D', palette: ['#7B2D2D', '#C6B39A', '#280B0F'] },
+    language,
+  }), [title, artist, cover, lines, language])
 
   useEffect(() => {
-    let cancelled = false
-    void getPublishedPhotos()
-      .then((photos) => {
-        const urls = photos.filter((photo) => photo.isPublished && photo.imageUrl).map((photo) => photo.imageUrl)
-        if (cancelled) return
-        setGalleryImages(urls)
-        const shuffled = [...urls].sort(() => Math.random() - 0.5).slice(0, 5)
-        setArtistImages([currentSong.coverImageUrl, ...shuffled])
-      })
-      .catch(() => undefined)
-    return () => { cancelled = true }
-  }, [currentSong.id, currentSong.coverImageUrl, editOpen])
-
-  const selectedTexts = useMemo(
-    () => selectedLines.map((index) => uniqueLines[index]).filter((line): line is string => Boolean(line)),
-    [selectedLines, uniqueLines]
-  )
-  const editedTexts = useMemo(
-    () => Array.from(new Set(editedText.split(/\r\n|[\n\r]/).map((line) => line.trim()).filter(Boolean))),
-    [editedText]
-  )
-  const cardLines = isEditing ? editedTexts : selectedTexts
-  const title = language === 'ar' ? currentSong.titleAr || currentSong.titleEn : currentSong.titleEn || currentSong.titleAr
-  const artist = language === 'ar' ? currentSong.artistAr || 'مهى فتوني' : currentSong.artistEn || 'Maha Ftouni'
-  const shareArtist = currentSong.artistEn || currentSong.artistAr || 'Maha Ftouni'
-  const subtitle = `${t('songLabel')} · ${artist}`
-
-  const options = useMemo<ShareCardOptions>(
-    () => ({ mode, style, background, align, fontSize, lyricsColor, showWatermark, sticker }),
-    [mode, style, background, align, fontSize, lyricsColor, showWatermark, sticker]
-  )
-  const cardData = useMemo<ShareCardData>(
-    () => ({
-      coverUrl: currentSong.coverImageUrl,
-      backgroundUrl,
-      palette,
-      lines: cardLines,
-      title,
-      subtitle,
-      artist,
-      language,
-    }),
-    [currentSong.coverImageUrl, backgroundUrl, palette, cardLines, title, subtitle, artist, language]
-  )
-  const siteOrigin = useMemo(() => getPublicSiteOrigin(), [])
-  const publicLink = useMemo(() => getPublicSongUrl(currentSong.id), [currentSong.id])
-  const songPageUrl = useMemo(() => {
-    if (currentSong.id) return publicLink
-    return siteOrigin
-  }, [currentSong.id, publicLink, siteOrigin])
-  const caption = useMemo(
-    () => mode === 'song'
-      ? buildSongShareCaption({ title, artist: shareArtist }, publicLink)
-      : buildShareCaption({ title, artist: shareArtist, lines: cardLines }),
-    [mode, title, shareArtist, publicLink, cardLines]
-  )
-
-  const reportError = useCallback((action: string, error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(`[ShareSheet] ${action} failed:`, error)
-    toast.error(`${t('shareFailed')}: ${message}`)
-  }, [t])
-
-  useEffect(() => {
-    if (step < 2) {
-      setIsPreviewReady(false)
-      return
+    if (!mounted) return
+    lockBodyScroll()
+    const close = () => { forceUnlockBodyScroll(); onCloseRef.current() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); close() } }
+    const onPop = () => forceUnlockBodyScroll()
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('popstate', onPop)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('popstate', onPop)
+      unlockBodyScroll()
     }
-    const canvas = previewRef.current
-    if (!canvas) return
-    let cancelled = false
-    setIsPreviewReady(false)
-    void drawShareCard(canvas, cardData, options).then(() => {
-      if (!cancelled) setIsPreviewReady(true)
-    }).catch((error) => {
-      if (!cancelled) reportError('preview', error)
-    })
-    return () => { cancelled = true }
-  }, [cardData, options, step, reportError])
+  }, [mounted])
 
   useEffect(() => {
-    if (!isMounted) return
-    bodyOverflowRef.current = document.body.style.overflow
-    htmlOverflowRef.current = document.documentElement.style.overflow
-    previousFocusRef.current = document.activeElement as HTMLElement | null
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-    closeRef.current?.focus()
+    if (pathnameRef.current !== pathname) { forceUnlockBodyScroll(); onCloseRef.current() }
+  }, [pathname])
 
-    const closeSheet = () => {
-      document.body.style.overflow = bodyOverflowRef.current
-      document.documentElement.style.overflow = htmlOverflowRef.current
-      onCloseRef.current()
+  useEffect(() => {
+    if (!mounted || !cardRef.current) return
+    void drawShareCard(cardRef.current, cardData, { ...DEFAULT_SHARE_OPTIONS, background: 'gradient' }).catch(() => undefined)
+  }, [mounted, cardData])
+
+  const close = useCallback(() => { forceUnlockBodyScroll(); onClose() }, [onClose])
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl)
+      setCopied(true)
+      toast.success(language === 'ar' ? 'تم النسخ' : 'Copied')
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      toast.error(t('shareFailed'))
     }
+  }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeSheet()
+  const getPngFile = async () => {
+    const result = cardRef.current
+      ? await new Promise<{ blob: Blob }>((resolve, reject) => cardRef.current!.toBlob((b) => b ? resolve({ blob: b }) : reject(new Error('blob')), 'image/png'))
+      : await renderShareCard(cardData, { ...DEFAULT_SHARE_OPTIONS, background: 'gradient' })
+    return new File([result.blob], `${SHARE_WATERMARK}-${title.replace(/[^\w\u0600-\u06FF-]+/g, '-')}.png`, { type: 'image/png' })
+  }
+
+  const shareLink = async () => {
+    if (navigator.share) {
+      try { await navigator.share({ title: shareTitle, text: shareText, url: shareUrl }); return } catch (e) { if (e instanceof DOMException && e.name === 'AbortError') return }
+    }
+    await copyLink()
+  }
+
+  const shareToUrl = async (platform: string) => {
+    const encoded = encodeURIComponent(shareUrl)
+    const textEnc = encodeURIComponent(shareText)
+    const map: Record<string, string> = {
+      whatsapp: `https://wa.me/?text=${encoded}`,
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encoded}`,
+      telegram: `https://t.me/share/url?url=${encoded}&text=${textEnc}`,
+      x: `https://twitter.com/intent/tweet?url=${encoded}&text=${textEnc}`,
+      sms: `sms:?body=${encoded}`,
+    }
+    if (map[platform]) { window.open(map[platform], '_blank', 'noopener,noreferrer'); return }
+    // image platforms fallback to link share
+    await shareLink()
+  }
+
+  const onShare = async (key: string) => {
+    if (busy) return
+    setBusy(key)
+    try {
+      if (key === 'more') { await shareLink(); return }
+      if (key === 'copy') { await copyLink(); return }
+      if (key === 'sms') { window.location.href = `sms:?body=${encodeURIComponent(shareUrl)}`; return }
+
+      const linkPlatforms = ['whatsapp', 'facebook', 'telegram', 'x']
+      const imagePlatforms = ['instagram', 'snapchat', 'tiktok']
+
+      if (imagePlatforms.includes(key)) {
+        if (navigator.share) {
+          try {
+            const file = await getPngFile()
+            if (navigator.canShare?.({ files: [file] })) {
+              await navigator.share({ files: [file] })
+              return
+            }
+          } catch (e) { if (e instanceof DOMException && e.name === 'AbortError') return }
+        }
+        // fallback: try normal share, else open platform impossible - silent no-op/copy? no download message
+        if (navigator.share) { try { await navigator.share({ title: shareTitle, url: shareUrl }); return } catch (e) { if (e instanceof DOMException && e.name === 'AbortError') return } }
+        await shareToUrl(key)
         return
       }
-      if (event.key !== 'Tab') return
-      const focusables = Array.from(
-        sheetRef.current?.querySelectorAll<HTMLElement>(
-          'button:not([disabled]), [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
-        ) ?? []
-      ).filter((element) => element.offsetParent !== null)
-      if (focusables.length === 0) return
-      const first = focusables[0]
-      const last = focusables[focusables.length - 1]
-      const active = document.activeElement
-      if (!sheetRef.current?.contains(active)) {
-        event.preventDefault()
-        first.focus()
-      } else if (event.shiftKey && active === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault()
-        first.focus()
+
+      if (linkPlatforms.includes(key)) {
+        if (navigator.share) {
+          try { await navigator.share({ title: shareTitle, text: shareText, url: shareUrl }); return } catch (e) { if (e instanceof DOMException && e.name === 'AbortError') return }
+        }
+        await shareToUrl(key)
+        return
       }
-    }
-    window.addEventListener('keydown', handleKeyDown, true)
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, true)
-      document.body.style.overflow = bodyOverflowRef.current
-      document.documentElement.style.overflow = htmlOverflowRef.current
-      const target = previousFocusRef.current
-      if (target?.isConnected) target.focus()
-      else document.body.focus()
-    }
-  }, [isMounted])
 
-  const toggleLine = (index: number) => {
-    const isSelected = selectedLines.includes(index)
-    if (isSelected) {
-      setSelectedLines((previous) => previous.filter((item) => item !== index))
-      return
-    }
-    if (selectedLines.length >= MAX_SHARE_LINES) {
-      toast.error(t('maxLines'))
-      return
-    }
-    setSelectedLines((previous) => [...previous, index].sort((a, b) => a - b))
-  }
-
-  const downloadPng = (dataUrl: string) => {
-    const link = document.createElement('a')
-    link.href = dataUrl
-    link.download = `${SHARE_WATERMARK}-${title.replace(/[^\w\u0600-\u06FF-]+/g, '-')}.png`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
-  const copyValue = async (value: string) => {
-    if (!navigator.clipboard?.writeText) throw new Error(t('clipboardUnsupported'))
-    await navigator.clipboard.writeText(value)
-  }
-
-  const canvasExport = (canvas: HTMLCanvasElement): Promise<{ dataUrl: string; blob: Blob }> =>
-    new Promise((resolve, reject) => {
-      canvas.toBlob((blob) => {
-        if (blob) resolve({ dataUrl: canvas.toDataURL('image/png'), blob })
-        else reject(new Error('Canvas toBlob returned null'))
-      }, 'image/png')
-    })
-
-  const withExport = async (
-    action: string,
-    handler: (result: { dataUrl: string; blob: Blob }) => Promise<void> | void
-  ) => {
-    if (mode === 'lyrics' && cardLines.length === 0) {
-      toast.error(t('selectAtLeastOne'))
-      return
-    }
-    setBusyAction(action)
-    try {
-      const result = isPreviewReady && previewRef.current
-        ? await canvasExport(previewRef.current)
-        : await renderShareCard(cardData, options)
-      await handler(result)
-    } catch (error) {
-      reportError(action, error)
+      await shareToUrl(key)
+    } catch (e) {
+      if (!(e instanceof DOMException && e.name === 'AbortError')) toast.error(t('shareFailed'))
     } finally {
-      setBusyAction('')
+      setBusy('')
     }
   }
 
-  const handleDownload = () => {
-    void withExport('download', ({ dataUrl }) => {
-      downloadPng(dataUrl)
-      toast.success(t('imageSaved'))
-    })
-  }
-  const downloadPngFromCurrent = () => { void withExport('download', ({ dataUrl }) => downloadPng(dataUrl)) }
+  if (!mounted) return null
 
-  const handleCopyLink = async () => {
-    try {
-      await copyValue(songPageUrl || caption)
-      toast.success(t('copiedLink'))
-    } catch (error) {
-      reportError('link', error)
-    }
-  }
-
-  const handleWhatsapp = () => {
-    void withExport('whatsapp', async ({ dataUrl }) => {
-      downloadPng(dataUrl)
-      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer')
-    })
-  }
-
-  const handleSms = () => {
-    window.location.href = `sms:?body=${encodeURIComponent(songPageUrl || caption)}`
-  }
-
-  const handleStory = () => {
-    void withExport('story', async ({ dataUrl }) => {
-      downloadPng(dataUrl)
-      toast.success(t('uploadInstruction'))
-    })
-  }
-
-  const startEditing = () => {
-    setEditedText(selectedTexts.join('\n'))
-    setIsEditing(true)
-    setEditTab('color')
-    setEditOpen(true)
-  }
-
-  const busyIcon = (action: string, fallback: React.ReactNode) =>
-    busyAction === action ? <Loader2 className="animate-spin" size={16} /> : fallback
-  const busy = Boolean(busyAction) || (step >= 2 && !isPreviewReady)
-  const stepTitle = step === 1 ? t('selectLyrics') : step === 2 ? t('customizeCard') : step === 3 ? t('shareSong') : t('share')
-  // shareActionClass removed in Step 6 redesign
-
-  // stickerIcon removed
-
-  if (!isMounted) return null
-
-  const gradientBg = `linear-gradient(180deg, ${palette.dominant} 0%, ${palette.palette[1] ?? palette.dominant} 55%, ${palette.palette[2] ?? palette.dominant} 100%)`
-  const bgStyle = step === 1
-    ? { background: gradientBg }
-    : { background: 'rgba(0,0,0,0.28)', backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)' }
+  const items = [
+    { key: 'whatsapp', label: 'WhatsApp', bg: 'bg-[#25D366]', icon: <MessageCircle size={20} /> },
+    { key: 'facebook', label: 'Facebook', bg: 'bg-[#1877F2]', icon: <span className="font-bold text-lg">f</span> },
+    { key: 'telegram', label: 'Telegram', bg: 'bg-[#229ED9]', icon: <Send size={20} /> },
+    { key: 'x', label: 'X', bg: 'bg-black', icon: <span className="font-bold text-lg">X</span> },
+    { key: 'snapchat', label: 'Snapchat', bg: 'bg-[#FFFC00] text-black', icon: <span className="font-bold">👻</span> },
+    { key: 'tiktok', label: 'TikTok', bg: 'bg-black border border-white/10', icon: <span className="font-bold">♪</span> },
+    { key: 'instagram', label: 'Instagram', bg: 'bg-gradient-to-br from-fuchsia-500 via-red-500 to-orange-400', icon: <span className="font-bold text-sm">IG</span> },
+    { key: 'sms', label: 'SMS', bg: 'bg-[#34C759]', icon: <Send size={20} /> },
+    { key: 'more', label: language === 'ar' ? 'المزيد' : 'More', bg: 'bg-white/15', icon: <MoreHorizontal size={20} /> },
+  ]
 
   return createPortal(
-    <div
-      ref={sheetRef}
-      onClick={onClose}
-      className="fixed inset-0 z-[200] flex flex-col text-white"
-      style={bgStyle}
-      dir={language === 'ar' ? 'rtl' : 'ltr'}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        <div className="mx-auto w-full max-w-3xl px-4 pt-6 pb-[120px]">
-        <header className={`relative mb-6 ${step === 1 ? 'pt-2 pb-2' : 'flex items-start justify-between gap-4'}`}>
-          {step === 1 ? (
-            <>
-              <button
-                ref={closeRef}
-                onClick={onClose}
-                className="absolute left-0 top-1 w-11 h-11 rounded-full flex items-center justify-center text-white/80 hover:text-white"
-                title={t('close')}
-                aria-label={t('close')}
-              >
-                <ArrowLeft size={28} />
-              </button>
-              <div className="text-center px-12">
-                <h2 className="text-4xl font-black tracking-tight">{t('selectLyrics')}</h2>
-                <p className="text-sm text-white/55 mt-2">
-                  {selectedLines.length >= MAX_SHARE_LINES ? t('maxLines') : `${selectedLines.length} ${language === 'ar' ? 'سطور محددة' : 'lines selected'}`}
-                </p>
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <h2 className="text-2xl font-black">{stepTitle}</h2>
-                <p className="text-sm text-white/50 mt-1">{title} · {shareArtist}</p>
-              </div>
-              <button
-                ref={closeRef}
-                onClick={onClose}
-                className="w-11 h-11 shrink-0 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
-                title={t('close')}
-                aria-label={t('close')}
-              >
-                <X size={23} />
-              </button>
-            </>
-          )}
-        </header>
-
-        {step === 1 && (
-          <div className="pb-[120px]">
-            <div className="flex flex-col items-center gap-7 py-4">
-              {uniqueLines.map((line, index) => {
-                const isSelected = selectedLines.includes(index)
-                return (
-                  <button
-                    key={`${index}-${line}`}
-                    type="button"
-                    onClick={() => toggleLine(index)}
-                    className={`w-full text-center text-[2rem] leading-tight font-black tracking-tight transition-colors ${
-                      isSelected ? 'text-white' : 'text-white/35 hover:text-white/55'
-                    }`}
-                  >
-                    {line}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {step >= 2 && (
-          <div className="flex justify-center rounded-3xl p-2" style={{ background: `${palette.dominant}22` }}>
-            <canvas
-              ref={previewRef}
-              className="rounded-2xl shadow-2xl"
-              style={{ width: 'auto', maxWidth: '100%', maxHeight: 'min(52vh, 580px)' }}
-            />
-          </div>
-        )}
-
-        {editOpen && (
-          <div className="fixed inset-x-0 bottom-0 z-[220] px-3 pb-3" onClick={(e) => e.stopPropagation()}>
-            <div className="mx-auto max-w-3xl rounded-3xl bg-zinc-900/95 border border-white/10 p-4 space-y-4 backdrop-blur-xl">
-              <div className="flex gap-2 bg-white/10 p-1 rounded-xl w-fit mx-auto">
-                {(['color', 'text', 'images'] as const).map((tab) => (
-                  <button key={tab} type="button" onClick={() => setEditTab(tab)} className={`px-4 py-2 rounded-lg text-sm font-bold ${editTab === tab ? 'bg-white text-black' : 'text-white/70'}`}>
-                    {tab === 'color' ? (language === 'ar' ? 'اللون' : 'Color') : tab === 'text' ? (language === 'ar' ? 'النص' : 'Text') : (language === 'ar' ? 'الصور' : 'Images')}
-                  </button>
-                ))}
-              </div>
-
-              {editTab === 'color' && (
-                <div className="flex flex-wrap gap-3 justify-center">
-                  {Array.from(new Set([palette.dominant, ...palette.palette, '#FFFFFF', '#000000'])).map((color) => (
-                    <button
-                      key={color}
-                      type="button"
-                      onClick={() => { setBackground('gradient'); setLyricsColor('#FFFFFF'); setPalette((p) => ({ ...p, dominant: color, palette: [color, p.palette[1] || color, p.palette[2] || color] })) }}
-                      className={`w-11 h-11 rounded-full border-2 ${palette.dominant.toLowerCase() === color.toLowerCase() && background === 'gradient' ? 'border-white scale-110' : 'border-white/20'}`}
-                      style={{ backgroundColor: color }}
-                      aria-label={color}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {editTab === 'text' && (
-                <div className="space-y-4">
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {STYLES.map((value) => (
-                      <Choice key={value} active={style === value} onClick={() => setStyle(value)}>
-                        {t(`style_${value}`)}
-                      </Choice>
-                    ))}
-                  </div>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {ALIGNS.map((value) => (
-                      <Choice key={value} active={align === value} onClick={() => setAlign(value)}>
-                        {t(`align${value.charAt(0).toUpperCase()}${value.slice(1)}`)}
-                      </Choice>
-                    ))}
-                    {FONT_SIZES.map((value) => (
-                      <Choice key={value} active={fontSize === value} onClick={() => setFontSize(value)}>
-                        <span className={value === 'S' ? 'text-xs' : value === 'M' ? 'text-base' : 'text-xl'}>a</span>
-                      </Choice>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {editTab === 'images' && (
-                <div className="flex flex-wrap gap-3 justify-center">
-                  {artistImages.map((url, index) => (
-                    <button
-                      key={`${url}-${index}`}
-                      type="button"
-                      onClick={() => { setBackground('cover'); setBackgroundUrl(url) }}
-                      className={`relative w-16 h-16 rounded-xl overflow-hidden border-2 ${background === 'cover' && backgroundUrl === url ? 'border-white scale-105' : 'border-white/20'}`}
-                    >
-                      <Image src={url} alt="" fill unoptimized sizes="64px" className="object-cover" />
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button type="button" onClick={() => setEditOpen(false)} className="w-full rounded-full bg-white text-black py-3 font-black">
-                {language === 'ar' ? 'تم' : 'Done'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="mt-6 space-y-4 flex flex-col items-center">
-            <div className="flex gap-2 bg-white/10 p-1 rounded-xl w-fit">
-              <span className="px-4 py-2 rounded-lg text-sm font-bold bg-white/15 text-white">{language === 'ar' ? 'كلمات' : 'Lyrics'}</span>
-            </div>
-            <button
-              type="button"
-              onClick={startEditing}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/15"
-            >
-              <Pencil size={15} /> {t('editLyrics')}
-            </button>
-          </div>
-        )}
+    <div className="fixed inset-0 z-[300] flex items-end sm:items-center justify-center p-3 bg-black/50 backdrop-blur-sm" onClick={close} dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="w-full max-w-[420px] mx-auto rounded-3xl bg-zinc-950/95 text-white border border-white/10 shadow-2xl p-4 sm:p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-bold">{t('share')}</h3>
+          <button onClick={close} className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center" aria-label={t('close')}><X size={16} /></button>
         </div>
-      </div>
 
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className="fixed inset-x-0 bottom-0 z-50 border-t border-white/10 bg-black/95 px-4 pt-3 backdrop-blur-xl"
-        style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom))' }}
-      >
-        <div className="mx-auto w-full max-w-3xl space-y-3">
-          {step === 1 && (
-            <button
-              type="button"
-              onClick={() => { setMode('lyrics'); setStep(3) }}
-              disabled={selectedLines.length === 0}
-              className={`w-full rounded-full py-4 text-lg font-black transition ${
-                selectedLines.length === 0
-                  ? 'bg-white/20 text-white/45 cursor-not-allowed'
-                  : 'bg-white/90 text-black hover:bg-white'
-              }`}
-            >
-              {t('continue')}
+        <div className="flex items-center gap-3 rounded-2xl bg-white/5 border border-white/10 p-3 mb-4">
+          <div className="relative w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-white/10">
+            <Image src={cover} alt={title} fill className="object-cover" sizes="64px" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-sm truncate">{title}</div>
+            <div className="text-xs text-white/60 truncate">{artist}</div>
+            <div className="text-[11px] text-white/40 truncate mt-1">{shareUrl}</div>
+          </div>
+        </div>
+
+        <canvas ref={cardRef} className="hidden" width={1080} height={1350} />
+
+        <button onClick={() => void onShare('copy')} className="w-full mb-4 flex items-center justify-center gap-2 rounded-2xl bg-white text-black py-3 font-bold text-sm hover:bg-white/90 transition">
+          {copied ? <Check size={16} /> : <Copy size={16} />}
+          <span>{language === 'ar' ? 'نسخ' : 'Copy'}</span>
+        </button>
+
+        <div className="flex gap-4 overflow-x-auto pb-1 -mx-1 px-1" style={{ scrollbarWidth: 'none' }}>
+          {items.map((item) => (
+            <button key={item.key} type="button" disabled={busy === item.key} onClick={() => void onShare(item.key)} className="flex flex-col items-center gap-2 min-w-[58px] text-[11px] text-white/80 disabled:opacity-50">
+              <span className={`w-12 h-12 rounded-full flex items-center justify-center text-white ${item.bg}`}>{busy === item.key ? <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : item.icon}</span>
+              <span className="whitespace-nowrap">{item.label}</span>
             </button>
-          )}
-
-          {step === 2 && (
-            <button
-              type="button"
-              onClick={() => setStep(3)}
-              className="w-full rounded-full bg-white py-3.5 text-sm font-black text-black transition hover:bg-white/90"
-            >
-              {t('done')}
-            </button>
-          )}
-
-          {step === 3 && (
-            <button
-              type="button"
-              onClick={() => setStep(4)}
-              disabled={busy}
-              className="w-full rounded-full bg-white py-3.5 text-sm font-black text-black transition hover:bg-white/90 disabled:opacity-40"
-            >
-              {t('share')}
-            </button>
-          )}
-
-          {step === 4 && (
-            <>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setStep(3)}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15"
-                >
-                  <ArrowLeft size={15} /> {t('back')}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownload}
-                  disabled={busy}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-full bg-white/10 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-white/15 disabled:opacity-40"
-                >
-                  {busyIcon('download', <Download size={15} />)} {t('downloadPng')}
-                </button>
-              </div>
-              <div className="flex gap-4 overflow-x-auto pb-1 justify-start sm:justify-center" dir="ltr">
-                {[
-                  { key: 'whatsapp', label: 'WhatsApp', icon: <MessageCircle size={22} />, bg: 'bg-[#25D366]', onClick: handleWhatsapp },
-                  { key: 'instagram', label: 'Instagram', icon: <Images size={22} />, bg: 'bg-gradient-to-br from-fuchsia-500 via-red-500 to-orange-400', onClick: handleStory },
-                  { key: 'tiktok', label: 'TikTok', icon: <span className="font-black text-lg">♪</span>, bg: 'bg-black border border-white/20', onClick: handleStory },
-                  { key: 'snapchat', label: 'Snapchat', icon: <span className="font-black text-lg">👻</span>, bg: 'bg-[#FFFC00] text-black', onClick: handleStory },
-                  { key: 'facebook', label: 'Facebook', icon: <span className="font-black text-xl">f</span>, bg: 'bg-[#1877F2]', onClick: () => { downloadPngFromCurrent(); window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(songPageUrl)}`, '_blank', 'noopener,noreferrer') } },
-                  { key: 'telegram', label: 'Telegram', icon: <Send size={22} />, bg: 'bg-[#229ED9]', onClick: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(songPageUrl)}&text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer') },
-                  { key: 'x', label: 'X', icon: <span className="font-black text-lg">X</span>, bg: 'bg-black border border-white/20', onClick: () => window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(songPageUrl)}&text=${encodeURIComponent(caption)}`, '_blank', 'noopener,noreferrer') },
-                  { key: 'sms', label: 'SMS', icon: <Send size={22} />, bg: 'bg-[#34C759]', onClick: handleSms },
-                  { key: 'copy', label: t('copyLink'), icon: <Link2 size={22} />, bg: 'bg-white/20', onClick: () => void handleCopyLink() },
-                  { key: 'download', label: t('downloadPng'), icon: busyIcon('download', <Download size={22} />), bg: 'bg-white/20', onClick: handleDownload },
-                ].map((item) => (
-                  <button key={item.key} type="button" onClick={item.onClick} disabled={busy && item.key !== 'copy' && item.key !== 'sms' && item.key !== 'x' && item.key !== 'telegram'} className="flex flex-col items-center gap-2 text-[11px] text-white/80 min-w-[64px] disabled:opacity-40">
-                    <span className={`w-14 h-14 rounded-full text-white flex items-center justify-center ${item.bg}`}>{item.icon}</span>
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          ))}
         </div>
       </div>
     </div>,

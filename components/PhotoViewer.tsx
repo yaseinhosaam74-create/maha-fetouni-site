@@ -62,9 +62,9 @@ export default function PhotoViewer({ photos, initialIndex, initialPhoto }: Phot
     const photoUrl = `${window.location.origin}/gallery/photo/${currentPhoto.id}`
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'صورة', text: 'شاهد هذه الصورة', url: photoUrl })
-      } catch {
-        toast.error('تعذرت المشاركة')
+        await navigator.share({ title: 'صورة', url: photoUrl })
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return
       }
     } else {
       navigator.clipboard.writeText(photoUrl)

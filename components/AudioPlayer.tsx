@@ -38,19 +38,14 @@ export default function AudioPlayer() {
 
   const handleShare = async () => {
     const songUrl = `${window.location.origin}/songs/${currentSong.id}`
-    const shareData = {
-      title: title,
-      text: `استمع إلى ${title} - ${artist}`,
-      url: songUrl,
-    }
     if (navigator.share) {
       try {
-        await navigator.share(shareData)
-      } catch {
-        toast.error('تعذرت المشاركة')
+        await navigator.share({ title, text: `${title} - ${artist}`, url: songUrl })
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return
       }
     } else {
-      navigator.clipboard.writeText(songUrl)
+      await navigator.clipboard.writeText(songUrl)
       toast.success('تم نسخ رابط الأغنية')
     }
   }

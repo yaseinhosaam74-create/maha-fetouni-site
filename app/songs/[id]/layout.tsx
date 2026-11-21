@@ -31,8 +31,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title,
     description,
-    openGraph: { type: 'music.song', url, title: `${title} - ${artist}`, description, images: song.coverImageUrl ? [{ url: song.coverImageUrl }] : [] },
-    twitter: { card: 'summary_large_image', title: `${title} - ${artist}`, description, images: song.coverImageUrl ? [song.coverImageUrl] : [] },
+    alternates: { canonical: url },
+    openGraph: {
+      type: 'music.song',
+      url,
+      title: `${title} - ${artist}`,
+      description,
+      images: song.coverImageUrl ? [{ url: song.coverImageUrl, width: 1200, height: 630, alt: title }] : [],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${title} - ${artist}`,
+      description,
+      images: song.coverImageUrl ? [song.coverImageUrl] : [],
+    },
   }
 }
 

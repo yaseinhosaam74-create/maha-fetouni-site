@@ -128,7 +128,7 @@ const translations: Record<string, Record<Language, string>> = {
   selectAtLeastOne: { ar: 'اختر سطرًا واحدًا على الأقل', en: 'Select at least one line' },
   clipboardUnsupported: { ar: 'نسخ الصور غير مدعوم في هذا المتصفح', en: 'Image copy is not supported in this browser' },
   downloadAndLinkCopied: { ar: 'تم تحميل الصورة ونسخ الرابط', en: 'Image downloaded and link copied' },
-  uploadInstruction: { ar: 'تم تحميل الصورة — افتح التطبيق وارفعها', en: 'Image downloaded — open the app and upload it' },
+  uploadInstruction: { ar: 'تم تحميل الصورة', en: 'Image downloaded' },
   white: { ar: 'أبيض', en: 'White' },
   black: { ar: 'أسود', en: 'Black' },
   red: { ar: 'أحمر', en: 'Red' },
