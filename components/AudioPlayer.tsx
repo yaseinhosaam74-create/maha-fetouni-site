@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { db } from '@/lib/firebase'
 import { doc, updateDoc, increment } from 'firebase/firestore'
 import { useLocalStorage } from '@/lib/useLocalStorage'
+import { shareSong } from '@/lib/nativeShare'
 
 export default function AudioPlayer() {
   const { currentSong, isPlaying, isMuted, currentTime, duration, togglePlay, toggleMute, seek, next, prev, playlist } = useAudio()
@@ -37,17 +38,7 @@ export default function AudioPlayer() {
   }
 
   const handleShare = async () => {
-    const songUrl = `${window.location.origin}/songs/${currentSong.id}`
-    if (navigator.share) {
-      try {
-        await navigator.share({ title, text: `${title} - ${artist}`, url: songUrl })
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'AbortError') return
-      }
-    } else {
-      await navigator.clipboard.writeText(songUrl)
-      toast.success('تم نسخ رابط الأغنية')
-    }
+    await shareSong(currentSong)
   }
 
   const handleLike = async () => {

@@ -13,7 +13,7 @@ async function getSong(id: string) {
     const s = (k: string) => f[k]?.stringValue || ''
     return {
       titleAr: s('titleAr'), titleEn: s('titleEn'),
-      artistAr: s('artistAr') || 'مهى فتوني', artistEn: s('artistEn') || 'Maha Ftouni',
+      artistAr: s('artistAr') || 'مها فتوني', artistEn: s('artistEn') || 'Maha Ftouni',
       coverImageUrl: s('coverImageUrl'), description: s('descriptionAr') || s('descriptionEn') || '',
     }
   } catch { return null }
@@ -22,12 +22,13 @@ async function getSong(id: string) {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { id } = await params
   const song = await getSong(id)
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://maha-ftouni.com'
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://maha-fetouni-site.vercel.app'
   if (!song) return { title: 'أغنية' }
   const title = song.titleAr || song.titleEn || 'أغنية'
-  const artist = song.artistAr || song.artistEn || 'مهى فتوني'
-  const description = song.description || `استمع إلى ${title} للفنانة ${artist}`
+  const artist = song.artistAr || song.artistEn || 'مها فتوني'
+  const description = song.description || `اسمعي ${title} للفنانة ${artist} على موقع مها فتوني`
   const url = `${siteUrl}/songs/${id}`
+  const cover = song.coverImageUrl || `${siteUrl}/og-cover.jpg`
   return {
     title,
     description,
@@ -37,13 +38,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       url,
       title: `${title} - ${artist}`,
       description,
-      images: song.coverImageUrl ? [{ url: song.coverImageUrl, width: 1200, height: 630, alt: title }] : [],
+      images: [{ url: cover, width: 1200, height: 630, alt: title }],
     },
     twitter: {
       card: 'summary_large_image',
       title: `${title} - ${artist}`,
       description,
-      images: song.coverImageUrl ? [song.coverImageUrl] : [],
+      images: [cover],
     },
   }
 }

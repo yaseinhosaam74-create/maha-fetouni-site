@@ -15,7 +15,7 @@ import { getActiveLineIndex } from '@/lib/lyrics'
 import { likeSong, unlikeSong, isSongLiked } from '@/lib/firestore'
 import { useDeviceId } from '@/lib/useLocalStorage'
 import SongShareButton from './SongShareButton'
-import ShareSheet from './ShareSheet'
+import { shareLyrics } from '@/lib/nativeShare'
 import { forceUnlockBodyScroll, lockBodyScroll, unlockBodyScroll } from '@/lib/bodyScrollLock'
 
 export default function FullScreenPlayer() {
@@ -36,7 +36,8 @@ export default function FullScreenPlayer() {
   const [liked, setLiked] = useState(false)
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false)
-  const [isLyricsShareOpen, setIsLyricsShareOpen] = useState(false)
+  const [selectedLyricLines, setSelectedLyricLines] = useState<string[]>([])
+  const [sharingLyrics, setSharingLyrics] = useState(false)
 
   const listRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
@@ -231,6 +232,29 @@ export default function FullScreenPlayer() {
     else prev()
   }
 
+  const toggleLyricSelection = (content: string) => {
+    setSelectedLyricLines((current) => {
+      if (current.includes(content)) return current.filter((line) => line !== content)
+      if (current.length >= 5) return current
+      return [...current, content]
+    })
+  }
+
+  const handleLyricsShare = async () => {
+    if (!displaySong || sharingLyrics) return
+    setSharingLyrics(true)
+    const lines = selectedLyricLines.length > 0
+      ? selectedLyricLines
+      : lyrics.lines.slice(Math.max(0, activeIndex - 1), activeIndex + 3).map((line) => line.content).filter(Boolean)
+    try {
+      await shareLyrics(displaySong, lines.length > 0 ? lines : lyrics.lines.map((line) => line.content).slice(0, 4))
+    } catch {
+      toast.error(t('shareFailed'))
+    } finally {
+      setSharingLyrics(false)
+    }
+  }
+
   const handleLike = async () => {
     if (!displaySong || !deviceId) return
     const nextLiked = !liked
@@ -371,6 +395,7 @@ export default function FullScreenPlayer() {
                       key={`${index}-${line.content}`}
                       data-line-index={index}
                       onClick={() => {
+                        toggleLyricSelection(line.content)
                         if (lyrics.isSynced) {
                           seek(line.time)
                           if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
@@ -380,8 +405,10 @@ export default function FullScreenPlayer() {
                       className={`text-center px-4 py-2 rounded-2xl transition-all duration-300 ${
                         isActive
                           ? 'text-white font-black text-xl md:text-3xl scale-[1.03]'
-                          : 'text-white/35 text-base md:text-xl hover:text-white/60'
-                      } ${lyrics.isSynced ? 'cursor-pointer' : ''}`}
+                          : selectedLyricLines.includes(line.content)
+                            ? 'text-rubine font-bold text-lg md:text-2xl'
+                            : 'text-white/35 text-base md:text-xl hover:text-white/60'
+                      } cursor-pointer`}
                     >
                       {line.content}
                     </p>
@@ -462,22 +489,11 @@ export default function FullScreenPlayer() {
           <button onClick={() => void handleLike()} className={`${smallButton} ${liked ? 'text-rubine bg-rubine/15' : ''}`} title={t('like')} aria-label={t('like')} aria-pressed={liked}>
             <Heart size={20} fill={liked ? 'currentColor' : 'none'} />
           </button>
-          <button onClick={() => setIsLyricsShareOpen(true)} className={`${smallButton} gap-1 w-auto px-3`} title={t('shareLyrics')} aria-label={t('shareLyrics')}>
+          <button onClick={() => void handleLyricsShare()} disabled={sharingLyrics} className={`${smallButton} gap-1 w-auto px-3`} title={t('shareLyrics')} aria-label={t('shareLyrics')}>
             <Share2 size={18} />
-            <span className="text-xs font-bold">{language === 'ar' ? 'مشاركة' : 'Share'}</span>
+            <span className="text-xs font-bold">{selectedLyricLines.length > 0 ? `${selectedLyricLines.length}` : language === 'ar' ? 'مشاركة' : 'Share'}</span>
           </button>
         </div>
-
-      {isLyricsShareOpen && (
-        <ShareSheet
-          key={`${displaySong.id}-lyrics`}
-          currentSong={displaySong}
-          lines={lyrics.lines.map((line) => line.content)}
-          language={language}
-          initialMode="lyrics"
-          onClose={() => setIsLyricsShareOpen(false)}
-        />
-      )}
       </div>
     </div>
   )

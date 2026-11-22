@@ -9,30 +9,32 @@ const cairo = Cairo({
   variable: '--font-cairo',
 })
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://maha-ftouni.com'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://maha-fetouni-site.vercel.app'
+const siteTitle = 'مها فتوني | Maha Ftouni'
+const siteDescription = 'اسمعي أغاني مها فتوني - الموقع الرسمي لأغاني وصور وكلمات مها فتوني'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'مهى فتوني | الموقع الرسمي',
-    template: '%s | مهى فتوني',
+    default: siteTitle,
+    template: '%s | مها فتوني',
   },
-  description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني - أغاني، صور، كلمات',
-  applicationName: 'مهى فتوني',
-  keywords: ['مهى فتوني', 'Maha Ftouni', 'اغاني', 'لبنان'],
+  description: siteDescription,
+  applicationName: 'مها فتوني',
+  keywords: ['مها فتوني', 'Maha Ftouni', 'اغاني', 'لبنان'],
   openGraph: {
     type: 'website',
     locale: 'ar_AR',
     url: siteUrl,
-    siteName: 'مهى فتوني',
-    title: 'مهى فتوني | الموقع الرسمي',
-    description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني',
-    images: [{ url: `${siteUrl}/og-cover.jpg`, width: 1200, height: 630, alt: 'مهى فتوني' }],
+    siteName: 'مها فتوني',
+    title: siteTitle,
+    description: siteDescription,
+    images: [{ url: `${siteUrl}/og-cover.jpg`, width: 1200, height: 630, alt: 'مها فتوني' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'مهى فتوني | الموقع الرسمي',
-    description: 'الموقع الرسمي للمطربة اللبنانية مهى فتوني',
+    title: siteTitle,
+    description: siteDescription,
     images: [`${siteUrl}/og-cover.jpg`],
   },
   robots: { index: true, follow: true },

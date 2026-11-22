@@ -1,14 +1,59 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { User } from 'firebase/auth'
 import { onAuthStateChanged, signOut, signInWithEmailAndPassword } from 'firebase/auth'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore'
 import { Music, Camera, Mail, Settings, LogOut, Sun, Moon, Languages, Eye, EyeOff, BarChart3, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { auth, db } from '@/lib/firebase'
 import { useTheme } from '@/components/ThemeContext'
+
+const OWNER_ADMIN_EMAIL = 'yaseinhosaam74@gmail.com'
+
+type AdminIdentity = {
+  uid: string
+  email: string
+  roleFound: string
+  adminDocExists: boolean
+}
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function hasAdminRole(value: unknown): boolean {
+  return value === 'admin' || value === true
+}
+
+async function resolveAdmin(user: User): Promise<{ isAdmin: boolean; identity: AdminIdentity }> {
+  const uid = user.uid
+  const email = normalizeEmail(user.email || '')
+  const isOwner = email === OWNER_ADMIN_EMAIL
+  const adminRef = doc(db, 'admins', uid)
+  const adminDoc = await getDoc(adminRef)
+  const adminDocExists = adminDoc.exists()
+  const adminData = adminDocExists ? adminDoc.data() : null
+  const roleFound = String(adminData?.role ?? adminData?.admin ?? '')
+  let isAdmin = hasAdminRole(adminData?.role) || hasAdminRole(adminData?.admin)
+
+  if (!isAdmin && isOwner) {
+    await setDoc(adminRef, {
+      uid,
+      email,
+      role: 'admin',
+      admin: true,
+      promotedAt: serverTimestamp(),
+    }, { merge: true })
+    isAdmin = true
+  }
+
+  return {
+    isAdmin,
+    identity: { uid, email, roleFound, adminDocExists },
+  }
+}
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -21,80 +66,100 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
   const pathname = usePathname()
   const { theme, toggleTheme } = useTheme()
   const isDark = theme === 'dark'
+  const authGeneration = useRef(0)
+  const pendingSignIn = useRef<Promise<User | null> | null>(null)
+
+  const approveUser = useCallback((nextUser: User | null, identity: AdminIdentity) => {
+    console.log('[AdminAuth] permission', { uid: identity.uid, email: identity.email, roleFound: identity.roleFound, adminDocExists: identity.adminDocExists })
+    if (nextUser) {
+      setUser(nextUser)
+      return
+    }
+    console.warn('[AdminAuth] access denied', identity)
+    setUser(null)
+    void signOut(auth)
+  }, [])
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (!currentUser) {
+    let cancelled = false
+    const unsubscribe = onAuthStateChanged(auth, (authUser) => {
+      const generation = ++authGeneration.current
+      if (cancelled) return
+
+      if (!authUser) {
         setUser(null)
         setLoading(false)
         return
       }
-      try {
-        const token = await currentUser.getIdTokenResult(true)
-        const emailLower = (currentUser.email || '').trim().toLowerCase()
-        let isAdmin = token.claims.admin === true
 
-        if (!isAdmin) {
-          const [uidDoc, emailDoc] = await Promise.all([
-            getDoc(doc(db, 'admins', currentUser.uid)),
-            emailLower ? getDoc(doc(db, 'admins', emailLower)) : Promise.resolve(null),
-          ])
-          const uidData = uidDoc.exists() ? uidDoc.data() : null
-          const emailData = emailDoc && emailDoc.exists() ? emailDoc.data() : null
-          isAdmin = uidData?.role === 'admin' || uidData?.admin === true || emailData?.role === 'admin' || emailData?.admin === true
-          console.info('[AdminAuth]', { uid: currentUser.uid, email: emailLower, claimAdmin: token.claims.admin === true, uidRole: uidData?.role, emailRole: emailData?.role })
-        } else {
-          console.info('[AdminAuth]', { uid: currentUser.uid, email: emailLower, claimAdmin: true })
-        }
+      if (pendingSignIn.current) {
+        void pendingSignIn.current.then((resolved) => {
+          if (cancelled || generation !== authGeneration.current) return
+          if (!resolved) return
+          setUser(resolved)
+          setLoading(false)
+        })
+        return
+      }
 
-        if (isAdmin) {
-          setUser(currentUser)
-        } else {
-          console.warn('[AdminAuth] access denied', { uid: currentUser.uid, email: emailLower })
+      void (async () => {
+        try {
+          const { isAdmin, identity } = await resolveAdmin(authUser)
+          if (cancelled || generation !== authGeneration.current) return
+          if (isAdmin) {
+            approveUser(authUser, identity)
+          } else {
+            approveUser(null, identity)
+          }
+        } catch (err) {
+          if (cancelled || generation !== authGeneration.current) return
+          console.error('[AdminAuth] check failed', err)
           setUser(null)
           await signOut(auth)
+        } finally {
+          if (!cancelled && generation === authGeneration.current) setLoading(false)
         }
-      } catch (err) {
-        console.error('[AdminAuth] check failed', err)
-        setUser(null)
-      } finally {
-        setLoading(false)
-      }
+      })()
     })
-    return () => unsubscribe()
-  }, [])
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [approveUser])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoginLoading(true)
     try {
       const credential = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
-      const token = await credential.user.getIdTokenResult(true)
-      const emailLower = (credential.user.email || '').trim().toLowerCase()
-      let isAdmin = token.claims.admin === true
-      let uidRole: unknown
-      let emailRole: unknown
-
-      if (!isAdmin) {
-        const [uidDoc, emailDoc] = await Promise.all([
-          getDoc(doc(db, 'admins', credential.user.uid)),
-          emailLower ? getDoc(doc(db, 'admins', emailLower)) : Promise.resolve(null),
-        ])
-        const uidData = uidDoc.exists() ? uidDoc.data() : null
-        const emailData = emailDoc && emailDoc.exists() ? emailDoc.data() : null
-        uidRole = uidData?.role ?? uidData?.admin
-        emailRole = emailData?.role ?? emailData?.admin
-        isAdmin = uidData?.role === 'admin' || uidData?.admin === true || emailData?.role === 'admin' || emailData?.admin === true
-      }
-
-      console.info('[AdminAuth] login', { uid: credential.user.uid, email: emailLower, claimAdmin: token.claims.admin === true, uidRole, emailRole, isAdmin })
-
-      if (!isAdmin) {
-        await signOut(auth)
-        toast.error(lang === 'ar' ? `ليس لديك صلاحية دخول (${emailLower || 'no-email'})` : `No admin access (${emailLower || 'no-email'})`)
-        return
-      }
-      toast.success(lang === 'ar' ? 'مرحباً بك' : 'Welcome')
+      const signedInUser = credential.user
+      const signInResult = (async () => {
+        const generation = ++authGeneration.current
+        try {
+          const { isAdmin, identity } = await resolveAdmin(signedInUser)
+          if (generation !== authGeneration.current) return null
+          if (!isAdmin) {
+            approveUser(null, identity)
+            toast.error(lang === 'ar' ? `ليس لديك صلاحية دخول (${identity.email || 'no-email'})` : `No admin access (${identity.email || 'no-email'})`)
+            return null
+          }
+          approveUser(signedInUser, identity)
+          toast.success(lang === 'ar' ? 'مرحباً بك' : 'Welcome')
+          return signedInUser
+        } catch (err) {
+          if (generation !== authGeneration.current) return null
+          console.error('[AdminAuth] login check failed', err)
+          setUser(null)
+          await signOut(auth)
+          toast.error(lang === 'ar' ? 'تعذر التحقق من الصلاحية' : 'Could not verify access')
+          return null
+        } finally {
+          setLoading(false)
+        }
+      })()
+      pendingSignIn.current = signInResult
+      await signInResult
+      pendingSignIn.current = null
     } catch (err) {
       console.error('[AdminAuth] login failed', err)
       const msg = err instanceof Error ? err.message : 'Invalid credentials'
@@ -122,7 +187,7 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <div className="min-h-screen flex items-center justify-center p-4 bg-italian-roast">
         <form onSubmit={handleLogin} className="bg-tamarind p-8 rounded-lg shadow-lg w-full max-w-md">
           <h1 className="text-2xl font-bold text-camel-coat mb-6 text-center">
-            {lang === 'ar' ? 'لوحة تحكم مهى فتوني' : 'Maha Fetouni Dashboard'}
+            {lang === 'ar' ? 'لوحة تحكم مها فتوني' : 'Maha Fetouni Dashboard'}
           </h1>
           <div className="mb-4">
             <label className="block text-camel-coat mb-2">

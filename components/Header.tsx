@@ -6,17 +6,15 @@ import { useLanguage } from '@/app/context/LanguageContext'
 import { useTheme } from '@/components/ThemeContext'
 import { useState, useEffect } from 'react'
 import QRModal from './QRModal'
-import ShareSheet from './ShareSheet'
+import { shareSite } from '@/lib/nativeShare'
 import { db } from '@/lib/firebase'
 import { doc, getDoc } from 'firebase/firestore'
-import type { Song } from '@/lib/firestore'
 
 export default function Header() {
   const pathname = usePathname()
   const { language, setLanguage, t } = useLanguage()
   const { theme, toggleTheme } = useTheme()
   const [showQr, setShowQr] = useState(false)
-  const [showShare, setShowShare] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
   const [siteName, setSiteName] = useState('')
   const isActive = (path: string) => pathname === path
@@ -45,21 +43,6 @@ export default function Header() {
     { href: '/about', label: t('about'), icon: Info },
     { href: '/contact', label: t('contact'), icon: Mail },
   ]
-
-  const shareSong: Song = {
-    id: '',
-    titleAr: siteName || 'مهى فتوني',
-    titleEn: siteName || 'Maha Ftouni',
-    artistAr: 'مهى فتوني',
-    artistEn: 'Maha Ftouni',
-    albumAr: language === 'ar' ? 'الموقع الرسمي' : 'Official Website',
-    albumEn: 'Official Website',
-    coverImageUrl: '/icon-512x512.png',
-    audioUrl: '',
-    plays: 0,
-    likes: 0,
-    isPublished: true,
-  }
 
   const handleSaveContact = () => {
     const phone = phoneNumber || '+9610000000'
@@ -112,22 +95,13 @@ export default function Header() {
           <button onClick={handleSaveContact} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title="تحميل جهة الاتصال">
             <UserPlus size={20} />
           </button>
-          <button onClick={() => setShowShare(true)} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title={t('share')}>
+          <button onClick={() => void shareSite()} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title={t('share')} aria-label={t('share')}>
             <Share2 size={20} />
           </button>
         </div>
       </div>
 
       <QRModal isOpen={showQr} onClose={() => setShowQr(false)} />
-      {showShare && (
-        <ShareSheet
-          currentSong={shareSong}
-          language={language}
-          initialMode="song"
-          initialStep={4}
-          onClose={() => setShowShare(false)}
-        />
-      )}
     </header>
   )
 }
