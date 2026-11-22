@@ -1,7 +1,6 @@
 'use client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
-import { usePathname } from 'next/navigation'
 import toast from 'react-hot-toast'
 import {
   Play, Pause, SkipBack, SkipForward, Shuffle, Repeat, Repeat1,
@@ -15,8 +14,7 @@ import { getActiveLineIndex } from '@/lib/lyrics'
 import { likeSong, unlikeSong, isSongLiked } from '@/lib/firestore'
 import { useDeviceId } from '@/lib/useLocalStorage'
 import SongShareButton from './SongShareButton'
-import { shareLyrics } from '@/lib/nativeShare'
-import { forceUnlockBodyScroll, lockBodyScroll, unlockBodyScroll } from '@/lib/bodyScrollLock'
+import ShareSheet from './ShareSheet'
 
 export default function FullScreenPlayer() {
   const {
@@ -29,15 +27,12 @@ export default function FullScreenPlayer() {
 
   const displaySong = fullscreenSong ?? currentSong
   const displaySongId = displaySong?.id
-  const pathname = usePathname()
-  const pathnameRef = useRef(pathname)
   const { lyrics, isLoading } = useSongLyrics(displaySong, language, duration)
 
   const [liked, setLiked] = useState(false)
   const [isUserScrolling, setIsUserScrolling] = useState(false)
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false)
-  const [selectedLyricLines, setSelectedLyricLines] = useState<string[]>([])
-  const [sharingLyrics, setSharingLyrics] = useState(false)
+  const [isLyricsShareOpen, setIsLyricsShareOpen] = useState(false)
 
   const listRef = useRef<HTMLDivElement>(null)
   const playerRef = useRef<HTMLDivElement>(null)
@@ -45,6 +40,8 @@ export default function FullScreenPlayer() {
   const isProgrammaticScrollRef = useRef(false)
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const programmaticTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const bodyOverflowRef = useRef('')
+  const htmlOverflowRef = useRef('')
   const previousFocusRef = useRef<HTMLElement | null>(null)
   const restorePageRef = useRef<() => void>(() => {})
 
@@ -122,20 +119,28 @@ export default function FullScreenPlayer() {
     }
   }, [closeFullscreenPlayer])
 
-  useEffect(() => { pathnameRef.current = pathname }, [pathname])
-
   useEffect(() => {
-    lockBodyScroll()
+    bodyOverflowRef.current = document.body.style.overflow
+    htmlOverflowRef.current = document.documentElement.style.overflow
     previousFocusRef.current = document.activeElement as HTMLElement | null
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
     playerRef.current?.focus()
 
-    restorePageRef.current = () => {
-      forceUnlockBodyScroll()
+    const restorePage = () => {
+      document.body.style.overflow = ''
+      document.documentElement.style.overflow = ''
+      document.body.classList.remove('overflow-hidden')
+      document.documentElement.classList.remove('overflow-hidden')
+      document.body.style.position = ''
+      document.documentElement.style.pointerEvents = ''
+      document.querySelectorAll('[data-native-share-menu="true"]').forEach((element) => element.remove())
       const target = previousFocusRef.current
       if (target?.isConnected) target.focus()
+      else document.body.focus()
     }
+    restorePageRef.current = restorePage
 
-    const handleRouteUnlock = () => forceUnlockBodyScroll()
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (document.querySelector('[data-share-menu="true"]')) return
@@ -152,25 +157,23 @@ export default function FullScreenPlayer() {
       const first = focusables[0]
       const last = focusables[focusables.length - 1]
       const active = document.activeElement
-      if (!playerRef.current?.contains(active)) { event.preventDefault(); first.focus() }
-      else if (event.shiftKey && active === first) { event.preventDefault(); last.focus() }
-      else if (!event.shiftKey && active === last) { event.preventDefault(); first.focus() }
+      if (!playerRef.current?.contains(active)) {
+        event.preventDefault()
+        first.focus()
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault()
+        first.focus()
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('popstate', handleRouteUnlock)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('popstate', handleRouteUnlock)
-      unlockBodyScroll()
+      restorePage()
     }
   }, [closePlayer])
-
-  useEffect(() => {
-    if (pathnameRef.current !== pathname) {
-      forceUnlockBodyScroll()
-      closeFullscreenPlayer()
-    }
-  }, [pathname, closeFullscreenPlayer])
 
   useEffect(() => () => {
     if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
@@ -230,29 +233,6 @@ export default function FullScreenPlayer() {
   const handlePrev = () => {
     if (displaySong && displaySong.id !== currentSong?.id) playSong(displaySong)
     else prev()
-  }
-
-  const toggleLyricSelection = (content: string) => {
-    setSelectedLyricLines((current) => {
-      if (current.includes(content)) return current.filter((line) => line !== content)
-      if (current.length >= 5) return current
-      return [...current, content]
-    })
-  }
-
-  const handleLyricsShare = async () => {
-    if (!displaySong || sharingLyrics) return
-    setSharingLyrics(true)
-    const lines = selectedLyricLines.length > 0
-      ? selectedLyricLines
-      : lyrics.lines.slice(Math.max(0, activeIndex - 1), activeIndex + 3).map((line) => line.content).filter(Boolean)
-    try {
-      await shareLyrics(displaySong, lines.length > 0 ? lines : lyrics.lines.map((line) => line.content).slice(0, 4))
-    } catch {
-      toast.error(t('shareFailed'))
-    } finally {
-      setSharingLyrics(false)
-    }
   }
 
   const handleLike = async () => {
@@ -395,7 +375,6 @@ export default function FullScreenPlayer() {
                       key={`${index}-${line.content}`}
                       data-line-index={index}
                       onClick={() => {
-                        toggleLyricSelection(line.content)
                         if (lyrics.isSynced) {
                           seek(line.time)
                           if (resumeTimerRef.current) clearTimeout(resumeTimerRef.current)
@@ -405,10 +384,8 @@ export default function FullScreenPlayer() {
                       className={`text-center px-4 py-2 rounded-2xl transition-all duration-300 ${
                         isActive
                           ? 'text-white font-black text-xl md:text-3xl scale-[1.03]'
-                          : selectedLyricLines.includes(line.content)
-                            ? 'text-rubine font-bold text-lg md:text-2xl'
-                            : 'text-white/35 text-base md:text-xl hover:text-white/60'
-                      } cursor-pointer`}
+                          : 'text-white/35 text-base md:text-xl hover:text-white/60'
+                      } ${lyrics.isSynced ? 'cursor-pointer' : ''}`}
                     >
                       {line.content}
                     </p>
@@ -489,11 +466,22 @@ export default function FullScreenPlayer() {
           <button onClick={() => void handleLike()} className={`${smallButton} ${liked ? 'text-rubine bg-rubine/15' : ''}`} title={t('like')} aria-label={t('like')} aria-pressed={liked}>
             <Heart size={20} fill={liked ? 'currentColor' : 'none'} />
           </button>
-          <button onClick={() => void handleLyricsShare()} disabled={sharingLyrics} className={`${smallButton} gap-1 w-auto px-3`} title={t('shareLyrics')} aria-label={t('shareLyrics')}>
+          <button onClick={() => setIsLyricsShareOpen(true)} className={`${smallButton} gap-1 w-auto px-3`} title={t('shareLyrics')} aria-label={t('shareLyrics')}>
             <Share2 size={18} />
-            <span className="text-xs font-bold">{selectedLyricLines.length > 0 ? `${selectedLyricLines.length}` : language === 'ar' ? 'مشاركة' : 'Share'}</span>
+            <span className="text-xs font-bold">{language === 'ar' ? 'مشاركة' : 'Share'}</span>
           </button>
         </div>
+
+      {isLyricsShareOpen && (
+        <ShareSheet
+          key={`${displaySong.id}-lyrics`}
+          currentSong={displaySong}
+          lines={lyrics.lines.map((line) => line.content)}
+          language={language}
+          initialMode="lyrics"
+          onClose={() => setIsLyricsShareOpen(false)}
+        />
+      )}
       </div>
     </div>
   )

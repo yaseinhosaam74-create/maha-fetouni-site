@@ -1,5 +1,4 @@
 'use client'
-import { useState } from 'react'
 import { Share2 } from 'lucide-react'
 import { useLanguage } from '@/app/context/LanguageContext'
 import { shareSong } from '@/lib/nativeShare'
@@ -15,23 +14,11 @@ type SongShareButtonProps = {
 
 export default function SongShareButton({ song, className = '', size = 20 }: SongShareButtonProps) {
   const { t } = useLanguage()
-  const [sharing, setSharing] = useState(false)
-
-  const handleShare = async () => {
-    if (sharing) return
-    setSharing(true)
-    try {
-      await shareSong(song)
-    } finally {
-      setSharing(false)
-    }
-  }
 
   return (
     <button
       type="button"
-      onClick={() => void handleShare()}
-      disabled={sharing}
+      onClick={() => shareSong(song)}
       className={className}
       title={t('share')}
       aria-label={t('share')}

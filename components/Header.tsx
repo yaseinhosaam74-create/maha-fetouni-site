@@ -59,7 +59,7 @@ export default function Header() {
   }
 
   return (
-    <header className="bg-italian-roast/80 backdrop-blur-md sticky top-0 z-50">
+    <header suppressHydrationWarning className="bg-italian-roast/80 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-2">
         <Link href="/" className="text-2xl font-bold text-camel-coat">
           {siteName || t('siteName')}
@@ -95,7 +95,13 @@ export default function Header() {
           <button onClick={handleSaveContact} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title="تحميل جهة الاتصال">
             <UserPlus size={20} />
           </button>
-          <button onClick={() => void shareSite()} className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat" title={t('share')} aria-label={t('share')}>
+          <button
+            suppressHydrationWarning
+            onClick={() => shareSite()}
+            className="p-2 rounded-full hover:bg-tamarind transition text-camel-coat"
+            title="مشاركة"
+            aria-label="مشاركة"
+          >
             <Share2 size={20} />
           </button>
         </div>

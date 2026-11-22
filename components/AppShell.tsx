@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Toaster } from 'react-hot-toast'
 import { AudioProvider, useAudio } from '@/components/AudioContext'
@@ -30,14 +31,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 function AppShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { isFullscreenPlayerOpen } = useAudio()
+  const [mounted, setMounted] = useState(false)
   const isAdminRoute = pathname.startsWith('/mahaftounidashboard1997')
   const isPhotoViewer = pathname.startsWith('/gallery/photo')
   const isFullscreen = isPhotoViewer
-  const showChrome = !isAdminRoute && !isFullscreen
+  const showChrome = !mounted || (!isAdminRoute && !isFullscreen && !isFullscreenPlayerOpen)
+
+  useEffect(() => setMounted(true), [])
 
   return (
     <>
-      <div className={isFullscreenPlayerOpen ? 'invisible pointer-events-none' : ''}>
+      <div className={mounted && isFullscreenPlayerOpen ? 'invisible pointer-events-none' : ''}>
         {showChrome && <DynamicBackground />}
         {showChrome && <Header />}
         <main className={`flex-1 ${showChrome ? 'pb-28' : ''} page-enter`}>{children}</main>

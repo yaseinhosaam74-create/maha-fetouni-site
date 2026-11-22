@@ -37,8 +37,8 @@ export default function AudioPlayer() {
     }
   }
 
-  const handleShare = async () => {
-    await shareSong(currentSong)
+  const handleShare = () => {
+    shareSong(currentSong)
   }
 
   const handleLike = async () => {
